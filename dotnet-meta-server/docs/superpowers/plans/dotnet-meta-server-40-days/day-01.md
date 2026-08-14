@@ -14,13 +14,13 @@
 ## 实现 Todo
 
 - [x] 创建解决方案 `DotnetMetaServer.slnx`（.NET 10 默认）或 `DotnetMetaServer.sln`（.NET 9 或更早）。
-- [ ] 创建项目：`Api`、`Application`、`Domain`、`Infrastructure`、`UnitTests`、`IntegrationTests`。
-- [ ] 建立引用方向：`Api -> Application -> Domain`，`Infrastructure -> Application/Domain`，测试项目引用被测项目。
-- [ ] 在 `Api` 中启用 ASP.NET Core 内置 OpenAPI。
-- [ ] 添加 `/health` 接口或健康检查。
-- [ ] 建立 `Directory.Build.props`，统一 nullable、implicit using、语言版本。
-- [ ] 写一条最小 smoke test：应用能创建测试服务器。
-- [ ] 记录今天遇到的 C# 语法：namespace、using、public、async。
+- [x] 创建项目：`Api`、`Application`、`Domain`、`Infrastructure`、`UnitTests`、`IntegrationTests`。
+- [x] 建立引用方向：`Api -> Application -> Domain`，`Infrastructure -> Application/Domain`，测试项目引用被测项目。
+- [x] 在 `Api` 中启用 ASP.NET Core 内置 OpenAPI。
+- [x] 添加 `/health` 接口或健康检查。
+- [x] 建立 `Directory.Build.props`，统一 nullable、implicit using、语言版本。
+- [x] 写一条最小 smoke test：应用能创建测试服务器。
+- [x] 记录今天遇到的 C# 语法：namespace、using、public、async。
 
 ## 验收标准
 
