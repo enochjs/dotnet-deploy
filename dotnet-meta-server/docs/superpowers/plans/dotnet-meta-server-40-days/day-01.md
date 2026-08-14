@@ -13,10 +13,10 @@
 
 ## 实现 Todo
 
-- [ ] 创建解决方案 `DotnetMetaServer.sln`。
+- [x] 创建解决方案 `DotnetMetaServer.slnx`（.NET 10 默认）或 `DotnetMetaServer.sln`（.NET 9 或更早）。
 - [ ] 创建项目：`Api`、`Application`、`Domain`、`Infrastructure`、`UnitTests`、`IntegrationTests`。
 - [ ] 建立引用方向：`Api -> Application -> Domain`，`Infrastructure -> Application/Domain`，测试项目引用被测项目。
-- [ ] 在 `Api` 中启用 Swagger。
+- [ ] 在 `Api` 中启用 ASP.NET Core 内置 OpenAPI。
 - [ ] 添加 `/health` 接口或健康检查。
 - [ ] 建立 `Directory.Build.props`，统一 nullable、implicit using、语言版本。
 - [ ] 写一条最小 smoke test：应用能创建测试服务器。
@@ -26,7 +26,7 @@
 
 - `dotnet build` 通过。
 - `dotnet test` 通过。
-- Swagger 能打开，`/health` 能返回成功。
+- OpenAPI 文档能访问，`/health` 能返回成功。
 - 你能说明每个项目目录负责什么。
 
 ## 晚上复盘

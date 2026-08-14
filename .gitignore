@@ -1,0 +1,51 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# .NET test and coverage output
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+*.vsp
+*.vspx
+*.ncrunch*
+
+# NuGet packages and generated package files
+*.nupkg
+*.snupkg
+packages/
+
+# User-specific IDE files
+.vs/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider/ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# Local environment files
+.env
+.env.*
+*.local
+appsettings.Local.json
+appsettings.*.Local.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp

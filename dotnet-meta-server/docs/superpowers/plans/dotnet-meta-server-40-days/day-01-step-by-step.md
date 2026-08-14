@@ -1,15 +1,30 @@
-# day1
+# Day 01 Step-by-Step - 解决方案骨架与 C# 快速上手
 
-## sln & csproj
+这份文档是 `day-01.md` 的跟做版。你可以从上到下照着执行，每完成一小步就打勾。今天的目标不是理解所有 .NET 细节，而是把项目骨架跑起来，并知道每个目录大概负责什么。
 
-| .NET | 前端类比 | 作用 |
-|---|---|---|
-| `.sln` | pnpm workspace / monorepo workspace | 管理一组项目 |
-| `.csproj` | `package.json` | 描述单个项目 |
-| `PackageReference` | `dependencies` | NuGet 包依赖 |
-| `ProjectReference` | workspace package 依赖 | 项目之间的依赖 |
-| NuGet | npm / pnpm | 包管理 |
-| `.dll` | 构建产物 | 编译后的程序集 |
+## 0. 今天最终要得到什么
+
+完成后，你的目录大概长这样：
+
+```text
+dotnet-meta-server/
+├── Directory.Build.props
+├── DotnetMetaServer.slnx  # .NET 10 默认生成；.NET 9 或更早可能是 DotnetMetaServer.sln
+├── src/
+│   ├── Api/
+│   ├── Application/
+│   ├── Domain/
+│   └── Infrastructure/
+└── tests/
+    ├── UnitTests/
+    └── IntegrationTests/
+```
+
+你最后需要确认三件事：
+
+- `dotnet build` 成功。
+- `dotnet test` 成功。
+- 浏览器能打开 Swagger，访问 `/health` 能看到成功响应。
 
 ## 1. 准备 .NET SDK
 
@@ -230,10 +245,6 @@ tests/UnitTests/UnitTests.csproj
 ### Step 7.1 一次性加入所有项目
 
 执行：
-
-```bash
-dotnet sln add $(find . -name "*.csproj")
-```
 
 ```bash
 dotnet sln add \
