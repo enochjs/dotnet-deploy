@@ -805,6 +805,7 @@ src/Infrastructure/Persistence/Configurations/ApplicationConfiguration.cs
 
 ```csharp
 using Domain.Entities;
+using Domain.Entities.Pipelines.Templates;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -852,111 +853,667 @@ public sealed class ApplicationConfiguration : IEntityTypeConfiguration<Applicat
             .WithOne(entity => entity.ParentApplication)
             .HasForeignKey(entity => entity.ParentApplicationId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasMany(entity => entity.PipelineTemplates)
+            .WithMany()
+            .UsingEntity<Dictionary<string, object>>(
+                "application_pipeline_templates",
+                right => right
+                    .HasOne<PipelineTemplate>()
+                    .WithMany()
+                    .HasForeignKey("pipeline_template_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left
+                    .HasOne<Application>()
+                    .WithMany()
+                    .HasForeignKey("application_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.ToTable("application_pipeline_templates");
+                    join.HasKey("application_id", "pipeline_template_id");
+                    join.IndexerProperty<int>("application_id").HasColumnName("application_id");
+                    join.IndexerProperty<int>("pipeline_template_id").HasColumnName("pipeline_template_id");
+                });
     }
 }
 ```
 
-### Step 8.4 其他配置类按字段清单补齐
+### Step 8.4 创建其他配置类
 
-下面是每张表必须配置的字段。写配置时逐项补 `HasColumnName`、`HasMaxLength`、`HasColumnType`、`HasDefaultValue`、`IsRequired`。
+下面把剩余 13 个配置类都写完整。每张表都按字段逐项配置 `HasColumnName`；字符串字段补 `HasMaxLength` 和是否必填；PostgreSQL 需要明确的类型，例如 `uuid`、`jsonb`、`text`、`timestamp with time zone`，用 `HasColumnType` 写清楚；有业务默认值的字段用 `HasDefaultValue` 固化在数据库模型里。后面的 Step 8.5、Step 8.6 会再解释关系和索引为什么这样配。
 
-`sub_applications`：
+#### `SubApplicationConfiguration.cs`
 
-```text
-id, parent_application_id, name, app_key, platform, deploy_key, git_id,
-registry_key, git_name, git_repo, main_branch, pre_branch, stage_branch,
-dev_branch, prod_site_address, pre_site_address, stage_site_address,
-dev_site_address, git_namespace_id, trigger_token, remark, public_path,
-upload_to_oss, app_type, variables, created_by_user_id, created_by_user_name,
-created_at, updated_by_user_id, updated_by_user_name, updated_at
+```csharp
+using Domain.Entities;
+using Domain.Entities.Pipelines.Templates;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class SubApplicationConfiguration : IEntityTypeConfiguration<SubApplication>
+{
+    public void Configure(EntityTypeBuilder<SubApplication> builder)
+    {
+        builder.ToTable("sub_applications");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.ParentApplicationId).HasColumnName("parent_application_id");
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.AppKey).HasColumnName("app_key").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Platform).HasColumnName("platform").HasMaxLength(64);
+        builder.Property(entity => entity.DeployKey).HasColumnName("deploy_key").HasMaxLength(128);
+        builder.Property(entity => entity.GitId).HasColumnName("git_id");
+        builder.Property(entity => entity.RegistryKey).HasColumnName("registry_key").HasMaxLength(64).HasDefaultValue("fe").IsRequired();
+        builder.Property(entity => entity.GitName).HasColumnName("git_name").HasMaxLength(256).IsRequired();
+        builder.Property(entity => entity.GitRepo).HasColumnName("git_repo").HasMaxLength(512).IsRequired();
+        builder.Property(entity => entity.MainBranch).HasColumnName("main_branch").HasMaxLength(128).HasDefaultValue("main").IsRequired();
+        builder.Property(entity => entity.PreBranch).HasColumnName("pre_branch").HasMaxLength(128).HasDefaultValue("pre").IsRequired();
+        builder.Property(entity => entity.StageBranch).HasColumnName("stage_branch").HasMaxLength(128).HasDefaultValue("stage").IsRequired();
+        builder.Property(entity => entity.DevBranch).HasColumnName("dev_branch").HasMaxLength(128).HasDefaultValue("dev").IsRequired();
+        builder.Property(entity => entity.ProdSiteAddress).HasColumnName("prod_site_address").HasMaxLength(512).HasDefaultValue(string.Empty).IsRequired();
+        builder.Property(entity => entity.PreSiteAddress).HasColumnName("pre_site_address").HasMaxLength(512).HasDefaultValue(string.Empty).IsRequired();
+        builder.Property(entity => entity.StageSiteAddress).HasColumnName("stage_site_address").HasMaxLength(512).HasDefaultValue(string.Empty).IsRequired();
+        builder.Property(entity => entity.DevSiteAddress).HasColumnName("dev_site_address").HasMaxLength(512).HasDefaultValue(string.Empty).IsRequired();
+        builder.Property(entity => entity.GitNamespaceId).HasColumnName("git_namespace_id");
+        builder.Property(entity => entity.TriggerToken).HasColumnName("trigger_token").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Remark).HasColumnName("remark").HasMaxLength(1024);
+        builder.Property(entity => entity.PublicPath).HasColumnName("public_path").HasMaxLength(512);
+        builder.Property(entity => entity.UploadToOss).HasColumnName("upload_to_oss").HasDefaultValue(false);
+        builder.Property(entity => entity.AppType).HasColumnName("app_type").HasMaxLength(32).HasDefaultValue("saas").IsRequired();
+        builder.Property(entity => entity.Variables).HasColumnName("variables").HasColumnType("jsonb");
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedByUserId).HasColumnName("updated_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.UpdatedByUserName).HasColumnName("updated_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+
+        builder.HasIndex(entity => entity.AppKey)
+            .HasDatabaseName("ix_sub_applications_app_key")
+            .IsUnique();
+
+        builder.HasMany(entity => entity.PipelineTemplates)
+            .WithMany()
+            .UsingEntity<Dictionary<string, object>>(
+                "sub_application_pipeline_templates",
+                right => right
+                    .HasOne<PipelineTemplate>()
+                    .WithMany()
+                    .HasForeignKey("pipeline_template_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left
+                    .HasOne<SubApplication>()
+                    .WithMany()
+                    .HasForeignKey("sub_application_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.ToTable("sub_application_pipeline_templates");
+                    join.HasKey("sub_application_id", "pipeline_template_id");
+                    join.IndexerProperty<int>("sub_application_id").HasColumnName("sub_application_id");
+                    join.IndexerProperty<int>("pipeline_template_id").HasColumnName("pipeline_template_id");
+                });
+    }
+}
 ```
 
-`users`：
+#### `UserConfiguration.cs`
 
-```text
-id, user_id, ding_talk_user_id, manager_user_id, manager_ding_talk_user_id,
-email, name, real_name, mobile, role, status, created_at, updated_at
+```csharp
+using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class UserConfiguration : IEntityTypeConfiguration<User>
+{
+    public void Configure(EntityTypeBuilder<User> builder)
+    {
+        builder.ToTable("users");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.UserId).HasColumnName("user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.DingTalkUserId).HasColumnName("ding_talk_user_id").HasMaxLength(64);
+        builder.Property(entity => entity.ManagerUserId).HasColumnName("manager_user_id").HasMaxLength(64);
+        builder.Property(entity => entity.ManagerDingTalkUserId).HasColumnName("manager_ding_talk_user_id").HasMaxLength(64);
+        builder.Property(entity => entity.Email).HasColumnName("email").HasMaxLength(128);
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.RealName).HasColumnName("real_name").HasMaxLength(64);
+        builder.Property(entity => entity.Mobile).HasColumnName("mobile").HasMaxLength(32).IsRequired();
+        builder.Property(entity => entity.Role).HasColumnName("role");
+        builder.Property(entity => entity.Status).HasColumnName("status");
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+
+        builder.HasIndex(entity => entity.Mobile)
+            .HasDatabaseName("ix_users_mobile")
+            .IsUnique();
+
+        builder.HasIndex(entity => entity.DingTalkUserId)
+            .HasDatabaseName("ix_users_ding_talk_user_id");
+    }
+}
 ```
 
-`requirements`：
+#### `RequirementConfiguration.cs`
 
-```text
-id, name, status, document_url, priority, remark, online_at,
-submitted_test_at, created_by_user_id, created_by_user_name, created_at,
-updated_by_user_id, updated_by_user_name, updated_at
+```csharp
+using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class RequirementConfiguration : IEntityTypeConfiguration<Requirement>
+{
+    public void Configure(EntityTypeBuilder<Requirement> builder)
+    {
+        builder.ToTable("requirements");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(512).IsRequired();
+        builder.Property(entity => entity.Status).HasColumnName("status");
+        builder.Property(entity => entity.DocumentUrl).HasColumnName("document_url").HasMaxLength(1024).IsRequired();
+        builder.Property(entity => entity.Priority).HasColumnName("priority");
+        builder.Property(entity => entity.Remark).HasColumnName("remark").HasMaxLength(2048);
+        builder.Property(entity => entity.OnlineAt).HasColumnName("online_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.SubmittedTestAt).HasColumnName("submitted_test_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedByUserId).HasColumnName("updated_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.UpdatedByUserName).HasColumnName("updated_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+
+        builder.HasMany(entity => entity.Developers)
+            .WithMany()
+            .UsingEntity<Dictionary<string, object>>(
+                "requirement_developers",
+                right => right
+                    .HasOne<User>()
+                    .WithMany()
+                    .HasForeignKey("user_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left
+                    .HasOne<Requirement>()
+                    .WithMany()
+                    .HasForeignKey("requirement_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.ToTable("requirement_developers");
+                    join.HasKey("requirement_id", "user_id");
+                    join.IndexerProperty<int>("requirement_id").HasColumnName("requirement_id");
+                    join.IndexerProperty<int>("user_id").HasColumnName("user_id");
+                });
+
+        builder.HasMany(entity => entity.Followers)
+            .WithMany()
+            .UsingEntity<Dictionary<string, object>>(
+                "requirement_followers",
+                right => right
+                    .HasOne<User>()
+                    .WithMany()
+                    .HasForeignKey("user_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left
+                    .HasOne<Requirement>()
+                    .WithMany()
+                    .HasForeignKey("requirement_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.ToTable("requirement_followers");
+                    join.HasKey("requirement_id", "user_id");
+                    join.IndexerProperty<int>("requirement_id").HasColumnName("requirement_id");
+                    join.IndexerProperty<int>("user_id").HasColumnName("user_id");
+                });
+    }
+}
 ```
 
-`iterations`：
+#### `IterationConfiguration.cs`
 
-```text
-id, application_id, sub_application_id, integration_release_id, name,
-application_name, sub_application_name, branch, original_commit, status,
-remark, created_by_user_id, created_by_user_name, created_at,
-updated_by_user_id, updated_by_user_name, updated_at
+```csharp
+using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class IterationConfiguration : IEntityTypeConfiguration<Iteration>
+{
+    public void Configure(EntityTypeBuilder<Iteration> builder)
+    {
+        builder.ToTable("iterations");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.ApplicationId).HasColumnName("application_id");
+        builder.Property(entity => entity.SubApplicationId).HasColumnName("sub_application_id");
+        builder.Property(entity => entity.IntegrationReleaseId).HasColumnName("integration_release_id");
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(512).IsRequired();
+        builder.Property(entity => entity.ApplicationName).HasColumnName("application_name").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.SubApplicationName).HasColumnName("sub_application_name").HasMaxLength(128);
+        builder.Property(entity => entity.Branch).HasColumnName("branch").HasMaxLength(256).IsRequired();
+        builder.Property(entity => entity.OriginalCommit).HasColumnName("original_commit").HasMaxLength(64);
+        builder.Property(entity => entity.Status).HasColumnName("status");
+        builder.Property(entity => entity.Remark).HasColumnName("remark").HasMaxLength(2048);
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedByUserId).HasColumnName("updated_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.UpdatedByUserName).HasColumnName("updated_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+
+        builder.HasOne(entity => entity.Application)
+            .WithMany()
+            .HasForeignKey(entity => entity.ApplicationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(entity => entity.SubApplication)
+            .WithMany()
+            .HasForeignKey(entity => entity.SubApplicationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(entity => entity.IntegrationRelease)
+            .WithMany()
+            .HasForeignKey(entity => entity.IntegrationReleaseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasMany(entity => entity.Requirements)
+            .WithMany(entity => entity.Iterations)
+            .UsingEntity<Dictionary<string, object>>(
+                "iteration_requirements",
+                right => right
+                    .HasOne<Requirement>()
+                    .WithMany()
+                    .HasForeignKey("requirement_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                left => left
+                    .HasOne<Iteration>()
+                    .WithMany()
+                    .HasForeignKey("iteration_id")
+                    .OnDelete(DeleteBehavior.Cascade),
+                join =>
+                {
+                    join.ToTable("iteration_requirements");
+                    join.HasKey("iteration_id", "requirement_id");
+                    join.IndexerProperty<int>("iteration_id").HasColumnName("iteration_id");
+                    join.IndexerProperty<int>("requirement_id").HasColumnName("requirement_id");
+                });
+    }
+}
 ```
 
-`integration_releases`：
+#### `IntegrationReleaseConfiguration.cs`
 
-```text
-id, version, name, branch, remark, created_by_user_id, created_by_user_name,
-created_at, updated_at
+```csharp
+using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class IntegrationReleaseConfiguration : IEntityTypeConfiguration<IntegrationRelease>
+{
+    public void Configure(EntityTypeBuilder<IntegrationRelease> builder)
+    {
+        builder.ToTable("integration_releases");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.Version).HasColumnName("version").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(512);
+        builder.Property(entity => entity.Branch).HasColumnName("branch").HasMaxLength(256);
+        builder.Property(entity => entity.Remark).HasColumnName("remark").HasMaxLength(2048);
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+
+        builder.HasIndex(entity => entity.Version)
+            .HasDatabaseName("ix_integration_releases_version")
+            .IsUnique();
+
+        builder.HasMany(entity => entity.ReleaseApps)
+            .WithOne(entity => entity.IntegrationRelease)
+            .HasForeignKey(entity => entity.IntegrationReleaseId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
 ```
 
-`integration_release_apps`：
+#### `IntegrationReleaseAppConfiguration.cs`
 
-```text
-id, integration_release_id, application_id, sub_application_id, app_key,
-application_name, sub_application_name, iteration_id
+```csharp
+using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class IntegrationReleaseAppConfiguration : IEntityTypeConfiguration<IntegrationReleaseApp>
+{
+    public void Configure(EntityTypeBuilder<IntegrationReleaseApp> builder)
+    {
+        builder.ToTable("integration_release_apps");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.IntegrationReleaseId).HasColumnName("integration_release_id");
+        builder.Property(entity => entity.ApplicationId).HasColumnName("application_id");
+        builder.Property(entity => entity.SubApplicationId).HasColumnName("sub_application_id");
+        builder.Property(entity => entity.AppKey).HasColumnName("app_key").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.ApplicationName).HasColumnName("application_name").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.SubApplicationName).HasColumnName("sub_application_name").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.IterationId).HasColumnName("iteration_id");
+
+        builder.HasOne(entity => entity.Application)
+            .WithMany()
+            .HasForeignKey(entity => entity.ApplicationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(entity => entity.SubApplication)
+            .WithMany()
+            .HasForeignKey(entity => entity.SubApplicationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(entity => entity.Iteration)
+            .WithMany()
+            .HasForeignKey(entity => entity.IterationId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
 ```
 
-`pipeline_templates`：
+#### `PipelineTemplateConfiguration.cs`
 
-```text
-id, name, template_key, status, created_by_user_id, created_by_user_name,
-created_at, updated_by_user_id, updated_by_user_name, updated_at
+```csharp
+using Domain.Entities.Pipelines.Templates;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations.Pipelines.Templates;
+
+public sealed class PipelineTemplateConfiguration : IEntityTypeConfiguration<PipelineTemplate>
+{
+    public void Configure(EntityTypeBuilder<PipelineTemplate> builder)
+    {
+        builder.ToTable("pipeline_templates");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.TemplateKey).HasColumnName("template_key").HasMaxLength(128);
+        builder.Property(entity => entity.Status).HasColumnName("status").HasDefaultValue(1);
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedByUserId).HasColumnName("updated_by_user_id").HasMaxLength(64);
+        builder.Property(entity => entity.UpdatedByUserName).HasColumnName("updated_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+
+        builder.HasIndex(entity => entity.Name)
+            .HasDatabaseName("ix_pipeline_templates_name")
+            .IsUnique();
+
+        builder.HasIndex(entity => entity.TemplateKey)
+            .HasDatabaseName("ix_pipeline_templates_template_key")
+            .IsUnique();
+
+        builder.HasMany(entity => entity.Stages)
+            .WithOne(entity => entity.PipelineTemplate)
+            .HasForeignKey(entity => entity.PipelineTemplateId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
 ```
 
-`pipeline_template_stages`：
+#### `PipelineTemplateStageConfiguration.cs`
 
-```text
-id, pipeline_template_id, name, seq
+```csharp
+using Domain.Entities.Pipelines.Templates;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations.Pipelines.Templates;
+
+public sealed class PipelineTemplateStageConfiguration : IEntityTypeConfiguration<PipelineTemplateStage>
+{
+    public void Configure(EntityTypeBuilder<PipelineTemplateStage> builder)
+    {
+        builder.ToTable("pipeline_template_stages");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.PipelineTemplateId).HasColumnName("pipeline_template_id");
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Seq).HasColumnName("seq");
+
+        builder.HasMany(entity => entity.Jobs)
+            .WithOne(entity => entity.PipelineTemplateStage)
+            .HasForeignKey(entity => entity.PipelineTemplateStageId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
 ```
 
-`pipeline_template_jobs`：
+#### `PipelineTemplateJobConfiguration.cs`
 
-```text
-id, pipeline_template_stage_id, name, job_key, stage_seq, extra
+```csharp
+using Domain.Entities.Pipelines.Templates;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations.Pipelines.Templates;
+
+public sealed class PipelineTemplateJobConfiguration : IEntityTypeConfiguration<PipelineTemplateJob>
+{
+    public void Configure(EntityTypeBuilder<PipelineTemplateJob> builder)
+    {
+        builder.ToTable("pipeline_template_jobs");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.PipelineTemplateStageId).HasColumnName("pipeline_template_stage_id");
+        builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.JobKey).HasColumnName("job_key").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.StageSeq).HasColumnName("stage_seq");
+        builder.Property(entity => entity.Extra).HasColumnName("extra").HasColumnType("jsonb");
+    }
+}
 ```
 
-`pipelines`：
+#### `PipelineConfiguration.cs`
 
-```text
-id, app_key, iteration_id, repo_id, registry_key, created_by_user_id,
-created_by_user_name, created_at, updated_at, status, stage_seq,
-pipeline_template_id, branch, content, swim_lane, force_update, extra
+```csharp
+using Domain.Entities.Pipelines;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations.Pipelines;
+
+public sealed class PipelineConfiguration : IEntityTypeConfiguration<Pipeline>
+{
+    public void Configure(EntityTypeBuilder<Pipeline> builder)
+    {
+        builder.ToTable("pipelines");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("uuid").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.AppKey).HasColumnName("app_key").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.IterationId).HasColumnName("iteration_id");
+        builder.Property(entity => entity.RepoId).HasColumnName("repo_id");
+        builder.Property(entity => entity.RegistryKey).HasColumnName("registry_key").HasMaxLength(64).HasDefaultValue("fe").IsRequired();
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.Status).HasColumnName("status");
+        builder.Property(entity => entity.StageSeq).HasColumnName("stage_seq").HasDefaultValue(-1);
+        builder.Property(entity => entity.PipelineTemplateId).HasColumnName("pipeline_template_id");
+        builder.Property(entity => entity.Branch).HasColumnName("branch").HasMaxLength(256).IsRequired();
+        builder.Property(entity => entity.Content).HasColumnName("content").HasMaxLength(2048);
+        builder.Property(entity => entity.SwimLane).HasColumnName("swim_lane").HasMaxLength(128);
+        builder.Property(entity => entity.ForceUpdate).HasColumnName("force_update");
+        builder.Property(entity => entity.Extra).HasColumnName("extra").HasColumnType("jsonb");
+
+        builder.HasIndex(entity => entity.IterationId)
+            .HasDatabaseName("ix_pipelines_iteration_id");
+
+        builder.HasIndex(entity => entity.AppKey)
+            .HasDatabaseName("ix_pipelines_app_key");
+
+        builder.HasOne(entity => entity.PipelineTemplate)
+            .WithMany()
+            .HasForeignKey(entity => entity.PipelineTemplateId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasMany(entity => entity.Jobs)
+            .WithOne(entity => entity.Pipeline)
+            .HasForeignKey(entity => entity.PipelineId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
 ```
 
-`pipeline_jobs`：
+#### `PipelineJobConfiguration.cs`
 
-```text
-id, pipeline_id, stage_seq, job_key, status, created_at, updated_at,
-unit_key, extra
+```csharp
+using Domain.Entities.Pipelines;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations.Pipelines;
+
+public sealed class PipelineJobConfiguration : IEntityTypeConfiguration<PipelineJob>
+{
+    public void Configure(EntityTypeBuilder<PipelineJob> builder)
+    {
+        builder.ToTable("pipeline_jobs");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("uuid").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.PipelineId).HasColumnName("pipeline_id").HasColumnType("uuid");
+        builder.Property(entity => entity.StageSeq).HasColumnName("stage_seq");
+        builder.Property(entity => entity.JobKey).HasColumnName("job_key").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Status).HasColumnName("status");
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.UnitKey).HasColumnName("unit_key").HasMaxLength(256);
+        builder.Property(entity => entity.Extra).HasColumnName("extra").HasColumnType("jsonb");
+
+        builder.HasIndex(entity => new
+            {
+                entity.PipelineId,
+                entity.StageSeq,
+                entity.JobKey,
+            })
+            .HasDatabaseName("ix_pipeline_jobs_pipeline_stage_job")
+            .IsUnique();
+    }
+}
 ```
 
-`deploys`：
+#### `DeployConfiguration.cs`
 
-```text
-id, pipeline_id, app_key, iteration_id, created_by_user_id,
-created_by_user_name, created_at, env, version, use_vpn, deploy_type,
-swim_lane, integration_release_version
+```csharp
+using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class DeployConfiguration : IEntityTypeConfiguration<Deploy>
+{
+    public void Configure(EntityTypeBuilder<Deploy> builder)
+    {
+        builder.ToTable("deploys");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("uuid").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.PipelineId).HasColumnName("pipeline_id").HasColumnType("uuid");
+        builder.Property(entity => entity.AppKey).HasColumnName("app_key").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.IterationId).HasColumnName("iteration_id");
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.Env).HasColumnName("env").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.Version).HasColumnName("version").HasMaxLength(256);
+        builder.Property(entity => entity.UseVpn).HasColumnName("use_vpn");
+        builder.Property(entity => entity.DeployType).HasColumnName("deploy_type");
+        builder.Property(entity => entity.SwimLane).HasColumnName("swim_lane").HasMaxLength(128);
+        builder.Property(entity => entity.IntegrationReleaseVersion).HasColumnName("integration_release_version").HasMaxLength(128);
+
+        builder.HasIndex(entity => entity.AppKey)
+            .HasDatabaseName("ix_deploys_app_key");
+
+        builder.HasIndex(entity => entity.PipelineId)
+            .HasDatabaseName("ix_deploys_pipeline_id");
+
+        builder.HasOne(entity => entity.Pipeline)
+            .WithMany()
+            .HasForeignKey(entity => entity.PipelineId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+}
 ```
 
-`monitors`：
+#### `MonitorConfiguration.cs`
 
-```text
-id, app_key, env, version, source_uuid, tenant_id, tenant_name, user_id,
-user_name, url, browser, message, stack, status, remark, created_at,
-resolved_by_user_id, resolved_by_user_name, resolved_at
+```csharp
+using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Infrastructure.Persistence.Configurations;
+
+public sealed class MonitorConfiguration : IEntityTypeConfiguration<Monitor>
+{
+    public void Configure(EntityTypeBuilder<Monitor> builder)
+    {
+        builder.ToTable("monitors");
+        builder.HasKey(entity => entity.Id);
+
+        builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("uuid").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.AppKey).HasColumnName("app_key").HasMaxLength(128).IsRequired();
+        builder.Property(entity => entity.Env).HasColumnName("env").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.Version).HasColumnName("version").HasMaxLength(256);
+        builder.Property(entity => entity.SourceUuid).HasColumnName("source_uuid").HasMaxLength(64);
+        builder.Property(entity => entity.TenantId).HasColumnName("tenant_id").HasMaxLength(64);
+        builder.Property(entity => entity.TenantName).HasColumnName("tenant_name").HasMaxLength(128);
+        builder.Property(entity => entity.UserId).HasColumnName("user_id").HasMaxLength(64);
+        builder.Property(entity => entity.UserName).HasColumnName("user_name").HasMaxLength(64);
+        builder.Property(entity => entity.Url).HasColumnName("url").HasMaxLength(2048);
+        builder.Property(entity => entity.Browser).HasColumnName("browser").HasMaxLength(512);
+        builder.Property(entity => entity.Message).HasColumnName("message").HasColumnType("text");
+        builder.Property(entity => entity.Stack).HasColumnName("stack").HasColumnType("text");
+        builder.Property(entity => entity.Status).HasColumnName("status");
+        builder.Property(entity => entity.Remark).HasColumnName("remark").HasMaxLength(2048);
+        builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");
+        builder.Property(entity => entity.ResolvedByUserId).HasColumnName("resolved_by_user_id").HasMaxLength(64);
+        builder.Property(entity => entity.ResolvedByUserName).HasColumnName("resolved_by_user_name").HasMaxLength(64);
+        builder.Property(entity => entity.ResolvedAt).HasColumnName("resolved_at").HasColumnType("timestamp with time zone");
+
+        builder.HasIndex(entity => new
+            {
+                entity.AppKey,
+                entity.Env,
+            })
+            .HasDatabaseName("ix_monitors_app_key_env");
+
+        builder.HasIndex(entity => entity.Status)
+            .HasDatabaseName("ix_monitors_status");
+    }
+}
 ```
 
 ### Step 8.5 配置关系
