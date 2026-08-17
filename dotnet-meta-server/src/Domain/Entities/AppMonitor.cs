@@ -1,6 +1,6 @@
 namespace Domain.Entities;
 
-public sealed class Monitor
+public sealed class AppMonitor
 {
     public Guid Id { get; set; }
     public string AppKey { get; set; } = string.Empty;

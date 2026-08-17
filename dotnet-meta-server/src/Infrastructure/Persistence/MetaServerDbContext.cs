@@ -20,7 +20,7 @@ public sealed class MetaServerDbContext(DbContextOptions<MetaServerDbContext> op
   public DbSet<Pipeline> Pipelines => Set<Pipeline>();
   public DbSet<PipelineJob> PipelineJobs => Set<PipelineJob>();
   public DbSet<Deploy> Deploys => Set<Deploy>();
-  public DbSet<Monitor> Monitors => Set<Monitor>();
+  public DbSet<AppMonitor> AppMonitors => Set<AppMonitor>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
