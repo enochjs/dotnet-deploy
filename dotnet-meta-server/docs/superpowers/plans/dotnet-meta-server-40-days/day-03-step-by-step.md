@@ -129,7 +129,7 @@ dotnet add src/Infrastructure/Infrastructure.csproj package Microsoft.EntityFram
 
 - `Microsoft.EntityFrameworkCore`：EF Core 本体。
 - `Npgsql.EntityFrameworkCore.PostgreSQL`：PostgreSQL provider。
-- `Microsoft.EntityFrameworkCore.Design`：后续生成 migration 使用。
+- `Microsoft.EntityFrameworkCore.Design`：设计期工具包。加在 `Infrastructure` 上，是因为 DbContext 和以后的 migration 都在这里。`dotnet add` 会给它加上 `PrivateAssets=all`，所以不会传到 `Api`。Day 04 第一次用 `dotnet ef` 时，还需要给启动项目 `Api` 再加一次，原因会在那天解释。
 
 ### Step 3.2 让 Api 引用 Infrastructure
 
@@ -881,7 +881,7 @@ public sealed class ApplicationConfiguration : IEntityTypeConfiguration<Applicat
 
 ### Step 8.4 创建其他配置类
 
-下面把剩余 13 个配置类都写完整。每张表都按字段逐项配置 `HasColumnName`；字符串字段补 `HasMaxLength` 和是否必填；PostgreSQL 需要明确的类型，例如 `uuid`、`jsonb`、`text`、`timestamp with time zone`，用 `HasColumnType` 写清楚；有业务默认值的字段用 `HasDefaultValue` 固化在数据库模型里。后面的 Step 8.5、Step 8.6 会再解释关系和索引为什么这样配。
+下面把剩余 13 个配置类都写完整。每张表都按字段逐项配置 `HasColumnName`；字符串字段补 `HasMaxLength` 和是否必填；PostgreSQL 需要明确的类型，例如 `uuid`、`jsonb`、`text`、`timestamp with time zone`，用 `HasColumnType` 写清楚；有业务默认值的字段用 `HasDefaultValue` 固化在数据库模型里。`HasDefaultValue` 只能写常量，例如 `"fe"`、`false`、`-1`。不要写 `HasDefaultValue(DateTimeOffset.UtcNow)` 或 `HasDefaultValue(Guid.NewGuid())`：这些值每次建模都会变，Day 04 生成或应用 migration 时会失败。时间字段只声明列类型，插入时由应用层写 `DateTimeOffset.UtcNow`。后面的 Step 8.5、Step 8.6 会再解释关系和索引为什么这样配。
 
 #### `SubApplicationConfiguration.cs`
 

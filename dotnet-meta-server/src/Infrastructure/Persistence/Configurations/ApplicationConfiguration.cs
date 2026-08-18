@@ -21,17 +21,13 @@ public sealed class ApplicationConfiguration : IEntityTypeConfiguration<Applicat
         builder.Property(entity => entity.RegistryKey).HasColumnName("registry_key").HasMaxLength(64).HasDefaultValue("fe").IsRequired();
         builder.Property(entity => entity.GitName).HasColumnName("git_name").HasMaxLength(256).IsRequired();
         builder.Property(entity => entity.GitRepo).HasColumnName("git_repo").HasMaxLength(512).IsRequired();
-        builder.Property(entity => entity.MainBranch).HasColumnName("main_branch").HasMaxLength(128).HasDefaultValue("main").IsRequired();
-        builder.Property(entity => entity.PreBranch).HasColumnName("pre_branch").HasMaxLength(128).HasDefaultValue("pre").IsRequired();
-        builder.Property(entity => entity.StageBranch).HasColumnName("stage_branch").HasMaxLength(128).HasDefaultValue("stage").IsRequired();
-        builder.Property(entity => entity.DevBranch).HasColumnName("dev_branch").HasMaxLength(128).HasDefaultValue("dev").IsRequired();
+
         builder.Property(entity => entity.GitNamespaceId).HasColumnName("git_namespace_id");
         builder.Property(entity => entity.TriggerToken).HasColumnName("trigger_token").HasMaxLength(128).IsRequired();
         builder.Property(entity => entity.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(64).IsRequired();
         builder.Property(entity => entity.OwnerName).HasColumnName("owner_name").HasMaxLength(64).IsRequired();
         builder.Property(entity => entity.Status).HasColumnName("status");
         builder.Property(entity => entity.Remark).HasColumnName("remark").HasMaxLength(1024);
-        builder.Property(entity => entity.Ranchers).HasColumnName("ranchers").HasColumnType("jsonb");
         builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(64).IsRequired();
         builder.Property(entity => entity.CreatedByUserName).HasColumnName("created_by_user_name").HasMaxLength(64);
         builder.Property(entity => entity.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone");

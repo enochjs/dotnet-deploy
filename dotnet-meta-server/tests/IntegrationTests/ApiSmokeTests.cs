@@ -1,23 +1,24 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
+using IntegrationTests.Support;
 
 namespace IntegrationTests;
 
-public class ApiSmokeTests: IClassFixture<WebApplicationFactory<Program>>
+public class ApiSmokeTests : IClassFixture<TestEnvironmentFixture>
 {
-  private readonly WebApplicationFactory<Program> _factory;
+    private readonly TestEnvironmentFixture _fixture;
 
-  public ApiSmokeTests(WebApplicationFactory<Program> factory)
-  {
-    _factory = factory;
-  }
+    public ApiSmokeTests(TestEnvironmentFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-  [Fact]
-  public async Task GetHealth_ReturnsOk()
-  {
-    var client = _factory.CreateClient();
-    var response = await client.GetAsync("/health");
+    [Fact]
+    public async Task GetHealth_ReturnsOk()
+    {
+        var client = _fixture.Factory.CreateClient();
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-  }
+        var response = await client.GetAsync("/health");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
 }
