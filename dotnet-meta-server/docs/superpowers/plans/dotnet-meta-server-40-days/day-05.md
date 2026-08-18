@@ -1,36 +1,44 @@
-# Day 05 - 鉴权、当前用户和 InnerServer
+# Day 05 - 本地登录、JWT 鉴权和当前用户
 
 ## 今日目标
 
-实现鉴权和当前用户获取。这个模块小，但会贯穿所有需要登录的 API。
+实现企业项目里更常见的本地账号密码登录和标准 JWT Bearer 鉴权。这个模块小，但会贯穿所有需要登录的 API。
 
 ## 今天学习的 .NET 点
 
 - ASP.NET Core Authentication/Authorization。
-- 从 Header 读取 Bearer Token。
+- `Microsoft.AspNetCore.Authentication.JwtBearer` 标准鉴权流程。
+- `PasswordHasher<TUser>` 密码哈希。
+- 从 JWT claims 读取当前用户。
 - 自定义当前用户上下文。
-- Redis 缓存和 HttpClient 调用外部权限中心。
+- 认证配置、签名密钥、Issuer、Audience、过期时间。
 
 ## 实现 Todo
 
-- [ ] 实现 `CurrentUser` 模型：userId、mobile、name、token。
-- [ ] 实现 InnerServer typed client：`CheckToken`、`SearchUser`。
-- [ ] 实现 Bearer token 解析。
-- [ ] 实现 token -> userInfo 的 Redis 缓存。
-- [ ] 实现鉴权中间件或认证 handler。
+- [ ] 给 `User` 增加 `PasswordHash` 字段。
+- [ ] 实现 `JwtOptions` 配置和启动校验。
+- [ ] 实现密码哈希服务。
+- [ ] 实现 JWT 签发服务。
+- [ ] 实现本地登录服务：使用 `userId` 或 `mobile` + password 登录。
+- [ ] 注册标准 JWT Bearer 鉴权。
 - [ ] 实现当前用户访问器，供业务 Service 使用。
+- [ ] 实现 `/api/auth/login`。
 - [ ] 实现 `/api/auth/user`。
+- [ ] 测试密码错误返回稳定业务错误。
 - [ ] 测试无 token 返回 401。
 - [ ] 测试 token 格式错误返回 401。
-- [ ] 测试缓存未命中时调用 InnerServer。
-- [ ] 测试缓存命中时不调用 InnerServer。
+- [ ] 测试登录成功能拿到 accessToken。
+- [ ] 测试带 accessToken 能访问当前用户。
+- [ ] 测试过期 token 返回 401。
 
 ## 验收标准
 
+- `/api/auth/login` 使用本地数据库用户和密码登录。
 - `/api/auth/user` 与原路径兼容。
-- 需要鉴权的接口能拿到当前用户。
-- Redis 缓存 TTL 明确。
-- 401、业务异常、外部权限中心失败都有稳定响应。
+- 需要鉴权的接口能通过 `[Authorize]` 拿到当前用户。
+- 密码不以明文保存。
+- JWT 的 Issuer、Audience、SigningKey、过期时间都有配置。
+- 401、业务异常、token 过期都有稳定响应。
 
 ## 晚上复盘
 
