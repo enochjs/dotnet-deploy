@@ -4,9 +4,10 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Infrastructure.Persistence.Configurations;
 
-public sealed class ApplicationConfiguration : IEntityTypeConfiguration<Application>
+using AppEntity = Domain.Entities.Application;
+public sealed class ApplicationConfiguration : IEntityTypeConfiguration<AppEntity>
 {
-    public void Configure(EntityTypeBuilder<Application> builder)
+    public void Configure(EntityTypeBuilder<AppEntity> builder)
     {
         builder.ToTable("applications");
         // 指定主键

@@ -5,9 +5,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Persistence;
 
+using AppEntity = Domain.Entities.Application;
+
 public sealed class MetaServerDbContext(DbContextOptions<MetaServerDbContext> options) : DbContext(options)
 {
-  public DbSet<Application> Applications => Set<Application>();
+  public DbSet<AppEntity> Applications => Set<AppEntity>();
   public DbSet<SubApplication> SubApplications => Set<SubApplication>();
   public DbSet<User> Users => Set<User>();
   public DbSet<Requirement> Requirements => Set<Requirement>();

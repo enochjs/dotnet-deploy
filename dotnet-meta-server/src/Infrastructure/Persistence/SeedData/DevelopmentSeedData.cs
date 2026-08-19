@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Persistence.SeedData;
 
+using AppEntity = Domain.Entities.Application;
+
 public static class DevelopmentSeedData
 {
     public static async Task SeedAsync(MetaServerDbContext dbContext, CancellationToken cancellationToken = default)
@@ -48,7 +50,7 @@ public static class DevelopmentSeedData
             UpdatedAt = now,
         };
 
-        var application = new Application
+        var application = new AppEntity
         {
             Name = "Meta Web",
             AppKey = "meta-web",

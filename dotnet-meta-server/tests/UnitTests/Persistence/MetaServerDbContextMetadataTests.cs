@@ -6,6 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace UnitTests.Persistence;
 
+using AppEntity = Domain.Entities.Application;
+
 public sealed class MetaServerDbContextMetadataTests
 {
     private readonly MetaServerDbContext _dbContext = new(
@@ -44,7 +46,7 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), "applications", typeof(int))]
+    [InlineData(typeof(AppEntity), "applications", typeof(int))]
     [InlineData(typeof(SubApplication), "sub_applications", typeof(int))]
     [InlineData(typeof(User), "users", typeof(int))]
     [InlineData(typeof(Requirement), "requirements", typeof(int))]
@@ -71,8 +73,8 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), "app_key")]
-    [InlineData(typeof(Application), "created_at")]
+    [InlineData(typeof(AppEntity), "app_key")]
+    [InlineData(typeof(AppEntity), "created_at")]
     [InlineData(typeof(SubApplication), "parent_application_id")]
     [InlineData(typeof(SubApplication), "upload_to_oss")]
     [InlineData(typeof(Iteration), "integration_release_id")]
@@ -90,7 +92,7 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), "ranchers")]
+    [InlineData(typeof(AppEntity), "ranchers")]
     [InlineData(typeof(SubApplication), "variables")]
     [InlineData(typeof(PipelineTemplateJob), "extra")]
     [InlineData(typeof(Pipeline), "extra")]
@@ -104,8 +106,8 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), nameof(Application.CreatedAt))]
-    [InlineData(typeof(Application), nameof(Application.UpdatedAt))]
+    [InlineData(typeof(AppEntity), nameof(AppEntity.CreatedAt))]
+    [InlineData(typeof(AppEntity), nameof(AppEntity.UpdatedAt))]
     [InlineData(typeof(Requirement), nameof(Requirement.OnlineAt))]
     [InlineData(typeof(Pipeline), nameof(Pipeline.CreatedAt))]
     [InlineData(typeof(Deploy), nameof(Deploy.CreatedAt))]
