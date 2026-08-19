@@ -398,6 +398,29 @@ Linux/macOS 环境变量里用双下划线 `__` 表示配置层级。它会覆�
 mkdir -p src/Application/Auth
 ```
 
+### Step 6.1.1 先确认实体别名还在
+
+Day 03 已经要求：引用领域实体 `Application` 时，写成
+
+```csharp
+using AppEntity = Domain.Entities.Application;
+```
+
+并从 `DbSet<AppEntity>`、`IEntityTypeConfiguration<AppEntity>`、`new AppEntity` 来使用它。
+
+今天一开始写 `namespace Application.Auth`，就会把 `Application` 这个名字注册成命名空间。如果 Infrastructure 或测试里还在把 `Application` 当类型用，`dotnet build` 会报 CS0118。
+
+打开并确认这些文件顶部有别名，且类型用法是 `AppEntity`：
+
+```text
+src/Infrastructure/Persistence/MetaServerDbContext.cs
+src/Infrastructure/Persistence/Configurations/ApplicationConfiguration.cs
+src/Infrastructure/Persistence/SeedData/DevelopmentSeedData.cs
+tests/UnitTests/Persistence/MetaServerDbContextMetadataTests.cs
+```
+
+`Domain` 里的类名仍然是 `public sealed class Application`，不要改实体类名，也不要改表名 `applications`。
+
 ### Step 6.2 创建 `CurrentUser.cs`
 
 创建文件：
@@ -1359,6 +1382,16 @@ app.MapControllers();
 
 `UseAuthentication()` 必须在 `UseAuthorization()` 前面。认证先识别“你是谁”，授权再判断“你能不能访问”。
 
+### Step 13.4 用脚本同步种子数据
+
+本地登录用的是 `DevelopmentSeedData`，不是 `dotnet ef database update`。update 只建表。刚 `database drop` 过、或 `password_hash` 仍是空时，在项目根目录执行：
+
+```bash
+./scripts/seed-dev.sh
+```
+
+脚本会先应用 pending migration，再调用 `SeedAsync()`。已有用户时会跳过，所以空哈希的旧用户不会被自动修好；那种情况要先 drop 再跑脚本。
+
 ## 14. 更新种子数据密码
 
 ### Step 14.1 打开开发种子数据
@@ -2044,7 +2077,7 @@ dotnet run --project src/Api/Api.csproj
 
 ```text
 Now listening on: https://localhost:7001
-Now listening on: http://localhost:5001
+Now listening on: http://localhost:5063
 ```
 
 下面命令里的端口以你的实际输出为准。
@@ -2054,7 +2087,7 @@ Now listening on: http://localhost:5001
 新开一个终端，执行：
 
 ```bash
-curl -s -X POST http://localhost:5001/api/auth/login \
+curl -s -X POST http://localhost:5063/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"account":"13800000001","password":"Meta@123456"}'
 ```
@@ -2092,7 +2125,7 @@ TOKEN='<上一步返回的 accessToken>'
 然后执行：
 
 ```bash
-curl -s http://localhost:5001/api/auth/user \
+curl -s http://localhost:5063/api/auth/user \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -2122,7 +2155,7 @@ curl -s http://localhost:5001/api/auth/user \
 执行：
 
 ```bash
-curl -i http://localhost:5001/api/auth/user
+curl -i http://localhost:5063/api/auth/user
 ```
 
 你应该看到状态码：
@@ -2155,9 +2188,36 @@ dotnet ef database update \
   --startup-project src/Api/Api.csproj
 ```
 
-如果本地库里早就有 `users` 数据，seed 可能因为“已有用户”而跳过。学习阶段可以手动清空本地库，或临时换一个空数据库名。
+如果本地库里早就有 `users` 数据，seed 可能因为“已有用户”而跳过。学习阶段可以先 drop，再跑种子脚本：
 
-不要把数据库里的 `password_hash` 改成 `Meta@123456`。那是明文，不是哈希。
+```bash
+dotnet ef database drop \
+  --project src/Infrastructure/Infrastructure.csproj \
+  --startup-project src/Api/Api.csproj
+
+./scripts/seed-dev.sh
+```
+
+不要把数据库里的 `password_hash` 改成明文密码。
+
+### 22.1.1 登录成功却返回 500，日志里是 InvalidCastException
+
+现象：
+
+```text
+Unable to cast object of type 'Api.Responses.ApiResponse`1[Application.Auth.LoginResponse]'
+to type 'Application.Auth.LoginResponse'.
+```
+
+原因：Day 02 的 `ApiResponseFilter` 包装了 `Value`，但没有同步 `DeclaredType`。`AuthController` 返回 `Task<LoginResponse>` 时会触发这个问题。
+
+处理：打开 `src/Api/Responses/ApiResponseFilter.cs`，在赋值 `objectResult.Value` 之后加上：
+
+```csharp
+objectResult.DeclaredType = responseType;
+```
+
+改完后重启 `Api`，再试登录。
 
 ### 22.2 token 签发成功，但访问接口还是 401
 
@@ -2206,6 +2266,28 @@ JWT Bearer 校验失败会触发 challenge；如果没有自定义 result handle
 - 外部权限中心 token 校验：适合已有集团统一网关的系统。
 
 今天选本地账号密码 + JWT，是为了完整学习标准 .NET 流程。以后如果切到 SSO，也仍然会复用 `[Authorize]`、claims、当前用户访问器这些基础设施。
+
+### 22.6 `Application` 是命名空间，不能当类型用
+
+现象：
+
+```text
+error CS0118: “Application”是 命名空间，但此处被当做 类型 来使用
+```
+
+原因：
+
+应用层根命名空间是 `Application`，领域实体类也叫 `Application`。一旦出现 `namespace Application.Auth`，编译器会把单独的 `Application` 当成命名空间。
+
+处理：
+
+不要改实体类名。在引用这个实体的文件顶部加别名：
+
+```csharp
+using AppEntity = Domain.Entities.Application;
+```
+
+然后把 `DbSet<Application>`、`IEntityTypeConfiguration<Application>`、`new Application`、`typeof(Application)` 改成 `AppEntity`。`entity.Application` 这种导航属性名可以保留，那是属性名，不是类型名。
 
 ## 23. 今天的提交建议
 
@@ -2307,6 +2389,10 @@ HttpContext.Request.Headers["Authorization"]
 
 接入 ASP.NET Core 标准认证管线，后续扩展才顺。
 
+### 24.6 类型别名不是重命名实体
+
+`using AppEntity = Domain.Entities.Application;` 只是给类型起一个当前文件里的短名。`Domain` 里的类名、数据库表 `applications`、导航属性 `entity.Application` 都不改。它解决的是 C# 名字查找问题：层名 `Application` 和实体名 `Application` 撞车。
+
 ## 25. 晚上复盘
 
 可以按这几个问题写学习笔记：
@@ -2317,6 +2403,7 @@ HttpContext.Request.Headers["Authorization"]
 - `Issuer`、`Audience`、`SigningKey` 分别解决什么问题：
 - `UseAuthentication()` 和 `UseAuthorization()` 的顺序为什么不能反：
 - `ClaimsPrincipal` 和 `CurrentUser` 的关系：
+- 为什么实体 `Application` 要用别名 `AppEntity`，而不是改类名：
 - 今天完成的工程产物：
 - 明天风险：
 

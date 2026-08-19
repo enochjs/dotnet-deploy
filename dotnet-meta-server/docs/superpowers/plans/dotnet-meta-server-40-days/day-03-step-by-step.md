@@ -695,12 +695,14 @@ using Domain.Entities.Pipelines;
 using Domain.Entities.Pipelines.Templates;
 using Microsoft.EntityFrameworkCore;
 
+using AppEntity = Domain.Entities.Application;
+
 namespace Infrastructure.Persistence;
 
 public sealed class MetaServerDbContext(DbContextOptions<MetaServerDbContext> options)
     : DbContext(options)
 {
-    public DbSet<Application> Applications => Set<Application>();
+    public DbSet<AppEntity> Applications => Set<AppEntity>();
     public DbSet<SubApplication> SubApplications => Set<SubApplication>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Requirement> Requirements => Set<Requirement>();
@@ -721,6 +723,18 @@ public sealed class MetaServerDbContext(DbContextOptions<MetaServerDbContext> op
     }
 }
 ```
+
+你可以先这样理解：
+
+Day 01 的应用层项目叫 `Application`，Day 05 会开始写 `namespace Application` 和 `namespace Application.Auth`。实体类也叫 `Application`。C# 不允许同一个简单名字既是命名空间又是类型。`Infrastructure` 引用了 `Application` 项目，所以这里不要写 `DbSet<Application>`，否则 Day 05 会报 CS0118：`“Application”是命名空间，但此处被当做类型来使用`。
+
+从今天起用类型别名：
+
+```csharp
+using AppEntity = Domain.Entities.Application;
+```
+
+之后这个文件里用 `AppEntity` 表示领域实体。`Domain` 里的类名仍然是 `Application`，表名仍然是 `applications`。别名不是重命名实体，只是避免和层名冲突。
 
 ## 8. 创建配置类
 
@@ -809,11 +823,13 @@ using Domain.Entities.Pipelines.Templates;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
+using AppEntity = Domain.Entities.Application;
+
 namespace Infrastructure.Persistence.Configurations;
 
-public sealed class ApplicationConfiguration : IEntityTypeConfiguration<Application>
+public sealed class ApplicationConfiguration : IEntityTypeConfiguration<AppEntity>
 {
-    public void Configure(EntityTypeBuilder<Application> builder)
+    public void Configure(EntityTypeBuilder<AppEntity> builder)
     {
         builder.ToTable("applications");
         builder.HasKey(entity => entity.Id);
@@ -1804,6 +1820,8 @@ using Domain.Entities.Pipelines.Templates;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
+using AppEntity = Domain.Entities.Application;
+
 namespace UnitTests.Persistence;
 
 public sealed class MetaServerDbContextMetadataTests
@@ -1844,7 +1862,7 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), "applications", typeof(int))]
+    [InlineData(typeof(AppEntity), "applications", typeof(int))]
     [InlineData(typeof(SubApplication), "sub_applications", typeof(int))]
     [InlineData(typeof(User), "users", typeof(int))]
     [InlineData(typeof(Requirement), "requirements", typeof(int))]
@@ -1871,8 +1889,8 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), "app_key")]
-    [InlineData(typeof(Application), "created_at")]
+    [InlineData(typeof(AppEntity), "app_key")]
+    [InlineData(typeof(AppEntity), "created_at")]
     [InlineData(typeof(SubApplication), "parent_application_id")]
     [InlineData(typeof(SubApplication), "upload_to_oss")]
     [InlineData(typeof(Iteration), "integration_release_id")]
@@ -1890,7 +1908,7 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), "ranchers")]
+    [InlineData(typeof(AppEntity), "ranchers")]
     [InlineData(typeof(SubApplication), "variables")]
     [InlineData(typeof(PipelineTemplateJob), "extra")]
     [InlineData(typeof(Pipeline), "extra")]
@@ -1904,8 +1922,8 @@ public sealed class MetaServerDbContextMetadataTests
     }
 
     [Theory]
-    [InlineData(typeof(Application), nameof(Application.CreatedAt))]
-    [InlineData(typeof(Application), nameof(Application.UpdatedAt))]
+    [InlineData(typeof(AppEntity), nameof(AppEntity.CreatedAt))]
+    [InlineData(typeof(AppEntity), nameof(AppEntity.UpdatedAt))]
     [InlineData(typeof(Requirement), nameof(Requirement.OnlineAt))]
     [InlineData(typeof(Pipeline), nameof(Pipeline.CreatedAt))]
     [InlineData(typeof(Deploy), nameof(Deploy.CreatedAt))]
@@ -2150,6 +2168,7 @@ dotnet test
 - HasColumnName 控制列名，HasColumnType 控制数据库类型。
 - DateTimeOffset 适合表达带时区语义的业务时间。
 - jsonb 是 PostgreSQL 原生 JSON 存储类型，适合 variables、extra 这类扩展字段。
+- using AppEntity = Domain.Entities.Application 是类型别名：实体类名仍然是 Application，只是避免和应用层命名空间冲突。
 
 ## 今天完成的工程产物
 

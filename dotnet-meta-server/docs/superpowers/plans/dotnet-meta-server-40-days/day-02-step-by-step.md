@@ -1122,6 +1122,9 @@ public sealed class ApiResponseFilter : IAsyncResultFilter
                 "success",
                 objectResult.Value,
                 requestId);
+            // Task<T> / ActionResult<T> 会把 DeclaredType 设成 T。
+            // Value 已经换成 ApiResponse<T>，DeclaredType 也要同步，否则 JSON 序列化会 InvalidCastException。
+            objectResult.DeclaredType = responseType;
         }
 
         await next();
@@ -1146,6 +1149,7 @@ public sealed class ApiResponseFilter : IAsyncResultFilter
 - 这里的处理是：如果 Controller 返回普通对象，就自动包一层 `ApiResponse<T>`。
 - 只包装 2xx 成功响应，400、401、500 这类错误响应不在这里处理。
 - 如果本来已经是 `ApiResponse<T>`，就不要重复包装。
+- 改 `Value` 时必须同步改 `DeclaredType`。Day 05 的 `Task<LoginResponse>` 这类强类型返回值会暴露这个问题；Day 02 的 `Ok(匿名对象)` 往往碰巧没事。
 
 ### Step 13.2 确认 `Program.cs` 已经注册 Filter
 
@@ -1973,6 +1977,25 @@ private static bool IsApiResponse(Type type)
     return type.IsGenericType &&
         type.GetGenericTypeDefinition() == typeof(ApiResponse<>);
 }
+```
+
+### 卡点 3.1：登录或强类型 Action 返回 500，提示 InvalidCastException
+
+现象：
+
+```text
+Unable to cast object of type 'Api.Responses.ApiResponse`1[Application.Auth.LoginResponse]'
+to type 'Application.Auth.LoginResponse'.
+```
+
+原因：
+
+Controller 返回 `Task<LoginResponse>` 时，MVC 会创建 `ObjectResult`，并把 `DeclaredType` 设成 `LoginResponse`。Filter 把 `Value` 换成了 `ApiResponse<LoginResponse>`，但没改 `DeclaredType`。System.Text.Json 仍按 `LoginResponse` 序列化，于是强转失败。
+
+处理：包装后补上一行：
+
+```csharp
+objectResult.DeclaredType = responseType;
 ```
 
 ### 卡点 4：`/health` 没有被统一包装

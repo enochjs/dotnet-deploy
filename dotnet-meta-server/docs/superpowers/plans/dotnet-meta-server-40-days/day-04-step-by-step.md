@@ -541,6 +541,8 @@ using Domain.Entities;
 using Domain.Entities.Pipelines.Templates;
 using Microsoft.EntityFrameworkCore;
 
+using AppEntity = Domain.Entities.Application;
+
 namespace Infrastructure.Persistence.SeedData;
 
 public static class DevelopmentSeedData
@@ -586,7 +588,7 @@ public static class DevelopmentSeedData
             UpdatedAt = now,
         };
 
-        var application = new Application
+        var application = new AppEntity
         {
             Name = "Meta Web",
             AppKey = "meta-web",
@@ -789,6 +791,138 @@ dotnet build
 ```csharp
 namespace Infrastructure.Persistence.SeedData;
 ```
+
+- 如果报 CS0118 `“Application”是命名空间，但此处被当做类型来使用`，不要改实体类名。用 Day 03 的别名：`using AppEntity = Domain.Entities.Application;`，然后写 `new AppEntity { ... }`。
+
+### Step 8.5 用脚本写入种子数据
+
+`dotnet ef database update` 只负责表结构，不会调用 `DevelopmentSeedData`。集成测试里会手动 `SeedAsync`；本地数据库要用脚本同步一次。
+
+不要把 seed 写进 `Program.cs`。API 启动只处理请求，开发数据用单独命令写入，避免每次启动都碰数据库。
+
+创建：
+
+```text
+scripts/seed-dev.sh
+scripts/SeedDevData/SeedDevData.csproj
+scripts/SeedDevData/Program.cs
+```
+
+`scripts/seed-dev.sh`：
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+
+echo "Applying pending migrations..."
+dotnet ef database update \
+  --project src/Infrastructure/Infrastructure.csproj \
+  --startup-project src/Api/Api.csproj
+
+echo "Seeding development data..."
+dotnet run --project scripts/SeedDevData/SeedDevData.csproj -- "$root"
+```
+
+`scripts/SeedDevData/SeedDevData.csproj`：
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Infrastructure\Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+
+</Project>
+```
+
+`Microsoft.EntityFrameworkCore.Relational` 要写成和 Infrastructure 相同的 `10.0.11`。只引用 Infrastructure 时，控制台项目可能解析到另一个小版本，运行时会找不到程序集。
+
+`scripts/SeedDevData/Program.cs`：
+
+```csharp
+using Infrastructure.Persistence;
+using Infrastructure.Persistence.SeedData;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+
+var repoRoot = args.Length > 0
+    ? Path.GetFullPath(args[0])
+    : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+
+var developmentSettings = Path.Combine(repoRoot, "src", "Api", "appsettings.Development.json");
+if (!File.Exists(developmentSettings))
+{
+    Console.Error.WriteLine($"找不到配置文件: {developmentSettings}");
+    return 1;
+}
+
+var configuration = new ConfigurationBuilder()
+    .AddJsonFile(developmentSettings, optional: false, reloadOnChange: false)
+    .Build();
+
+var connectionString = configuration.GetSection("Postgres")["ConnectionString"];
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    Console.Error.WriteLine("appsettings.Development.json 里没有 Postgres:ConnectionString。");
+    return 1;
+}
+
+var options = new DbContextOptionsBuilder<MetaServerDbContext>()
+    .UseNpgsql(connectionString)
+    .Options;
+
+await using var dbContext = new MetaServerDbContext(options);
+
+var usersAlreadyExist = await dbContext.Users.AnyAsync();
+await DevelopmentSeedData.SeedAsync(dbContext);
+
+if (usersAlreadyExist)
+{
+    Console.WriteLine("Seed skipped: users already exist.");
+}
+else
+{
+    Console.WriteLine("Seed inserted development data.");
+}
+
+return 0;
+```
+
+这个小程序读取 `src/Api/appsettings.Development.json` 的连接串，调用已有的 `DevelopmentSeedData.SeedAsync()`。已有用户时会跳过，不会覆盖密码哈希。
+
+在项目根目录执行：
+
+```bash
+chmod +x scripts/seed-dev.sh
+./scripts/seed-dev.sh
+```
+
+你应该看到：
+
+```text
+Seed inserted development data.
+```
+
+如果库里已经有用户：
+
+```text
+Seed skipped: users already exist.
+```
+
+验收：刷新本地 `users` 表，能看到种子用户。`password_hash` 是哈希字符串，不是明文。
 
 ## 9. 安装集成测试依赖
 
@@ -1569,6 +1703,8 @@ git status --short
 src/Api/Api.csproj
 src/Infrastructure/Persistence/Migrations/*
 src/Infrastructure/Persistence/SeedData/DevelopmentSeedData.cs
+scripts/seed-dev.sh
+scripts/SeedDevData/*
 tests/IntegrationTests/IntegrationTests.csproj
 tests/IntegrationTests/Support/TestEnvironmentFixture.cs
 tests/IntegrationTests/Support/IntegrationTestCollection.cs
@@ -1585,6 +1721,7 @@ git add .config/dotnet-tools.json \
   src/Api/Api.csproj \
   src/Infrastructure/Persistence/Migrations \
   src/Infrastructure/Persistence/SeedData/DevelopmentSeedData.cs \
+  scripts \
   tests/IntegrationTests
 
 git commit -m "test: add repeatable database integration environment"

@@ -166,6 +166,8 @@ dotnet new classlib -n Application -o src/Application
 
 `Application` 放应用用例和业务流程，比如“创建用户”“提交订单”“查询列表”。
 
+这个项目名会成为根命名空间 `Application`。Day 03 会再有一个同名实体类 `Application`。C# 里同一个简单名字不能既是命名空间又是类型，所以从 Day 03 起，Infrastructure 和测试里会用别名 `AppEntity` 引用那个实体。现在先记住这件事，Day 03 会真正写出来。
+
 ### Step 5.3 创建 Domain 项目
 
 执行：
