@@ -9,6 +9,7 @@ public sealed class User
     public string? ManagerDingTalkUserId { get; set; }
     public string? Email { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
     public string? RealName { get; set; }
     public string Mobile { get; set; } = string.Empty;
     public int Role { get; set; }

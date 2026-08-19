@@ -1,6 +1,8 @@
+using Api.Auth;
 using Api.Configuration;
 using Api.Middleware;
 using Api.Responses;
+using Application;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
@@ -59,9 +61,12 @@ builder.Services.AddControllers(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAuthorization();
 builder.Services.AddApplicationOptions();
+builder.Services.AddMetaServerApplication();
 builder.Services.AddMetaServerPersistence(builder.Configuration);
+builder.Services.AddMetaServerAuthentication();
+builder.Services.AddAuthorization();
+
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationResultHandler>();
 
 var app = builder.Build();
@@ -76,6 +81,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 

@@ -18,6 +18,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(entity => entity.ManagerDingTalkUserId).HasColumnName("manager_ding_talk_user_id").HasMaxLength(64);
         builder.Property(entity => entity.Email).HasColumnName("email").HasMaxLength(128);
         builder.Property(entity => entity.Name).HasColumnName("name").HasMaxLength(64).IsRequired();
+        builder.Property(entity => entity.PasswordHash).HasColumnName(("password_hash")).HasMaxLength(512).IsRequired();
         builder.Property(entity => entity.RealName).HasColumnName("real_name").HasMaxLength(64);
         builder.Property(entity => entity.Mobile).HasColumnName("mobile").HasMaxLength(32).IsRequired();
         builder.Property(entity => entity.Role).HasColumnName("role");
@@ -28,8 +29,9 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasIndex(entity => entity.Mobile)
             .HasDatabaseName("ix_users_mobile")
             .IsUnique();
-
-        builder.HasIndex(entity => entity.DingTalkUserId)
-            .HasDatabaseName("ix_users_ding_talk_user_id");
+        
+        builder.HasIndex(entity => entity.UserId)
+            .HasDatabaseName("ix_users_user_id")
+            .IsUnique();
     }
 }

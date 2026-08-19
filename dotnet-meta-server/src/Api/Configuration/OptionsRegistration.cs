@@ -14,6 +14,7 @@ public static class OptionsRegistration
     services.AddValidatedOptions<InnerServerOptions>(InnerServerOptions.SectionName);
     services.AddValidatedOptions<MonitorOptions>(MonitorOptions.SectionName);
     services.AddValidatedOptions<LoggerOptions>(LoggerOptions.SectionName);
+    services.AddValidatedOptions<JwtOptions>(JwtOptions.SectionName);
     return services;
   }
 

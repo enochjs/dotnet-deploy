@@ -1,3 +1,5 @@
+using Application.Auth;
+using Infrastructure.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +18,9 @@ public static class PersistenceRegistration
         {
             options.UseNpgsql(connectionString);
         });
+
+        services.AddScoped<IUserCredentialRepository, UserCredentialRepository>();
+        services.AddSingleton<IPasswordHashService, PasswordHashService>();
 
         return services;
     }

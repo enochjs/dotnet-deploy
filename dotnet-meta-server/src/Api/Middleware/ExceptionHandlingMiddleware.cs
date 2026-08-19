@@ -1,6 +1,7 @@
 using System.Net;
 using Api.Exceptions;
 using Api.Responses;
+using Application.Auth;
 
 
 namespace Api.Middleware;
@@ -20,15 +21,42 @@ public sealed class ExceptionHandlingMiddleware
   }
 
   public async Task InvokeAsync(HttpContext context) {
-    try {
+    try
+    {
       await _next(context);
-    } catch (BusinessException exception) {
+    }
+    catch (BusinessException exception)
+    {
       await WriteErrorAsync(
         context,
         HttpStatusCode.BadRequest,
         exception.Code,
         exception.Message
       );
+    }
+    catch (UnauthorizedAccessException)
+    {
+      await WriteErrorAsync(
+        context,
+        HttpStatusCode.Unauthorized,
+        "Unauthorized",
+        "请先登陆");
+    }
+    catch (InvalidCredentialsException exception)
+    {
+      await WriteErrorAsync(
+        context,
+        HttpStatusCode.BadRequest,
+        "INVALID_CREDENTIALS",
+        exception.Message);
+    }
+    catch (CurrentUserNotFoundException exception)
+    {
+      await WriteErrorAsync(
+        context,
+        HttpStatusCode.Unauthorized,
+        "CURRENT_USER_NOTFOUND",
+        exception.Message);
     } catch (Exception exception) {
       _logger.LogError(exception, "Unhandled exception");
 
