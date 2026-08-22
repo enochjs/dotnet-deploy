@@ -30,6 +30,7 @@ public sealed class ApiResponseFilter: IAsyncResultFilter
         objectResult.Value,
         requestId
       );
+      objectResult.DeclaredType = responseType;
     }
 
     await next();

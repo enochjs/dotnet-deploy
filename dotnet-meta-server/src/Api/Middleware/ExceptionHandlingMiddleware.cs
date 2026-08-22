@@ -2,6 +2,7 @@ using System.Net;
 using Api.Exceptions;
 using Api.Responses;
 using Application.Auth;
+using Application.Common;
 
 
 namespace Api.Middleware;
@@ -57,7 +58,21 @@ public sealed class ExceptionHandlingMiddleware
         HttpStatusCode.Unauthorized,
         "CURRENT_USER_NOTFOUND",
         exception.Message);
-    } catch (Exception exception) {
+    }
+    catch (RequestValidationException exception)
+    {
+      await WriteValidationErrorAsync(context, exception.Errors);
+    }
+    catch (BusinessRuleException exception)
+    {
+      await WriteErrorAsync(
+        context,
+        HttpStatusCode.BadRequest,
+        exception.Code,
+        exception.Message);
+    }
+    
+    catch (Exception exception) {
       _logger.LogError(exception, "Unhandled exception");
 
       await WriteErrorAsync(
@@ -87,6 +102,35 @@ public sealed class ExceptionHandlingMiddleware
     var response = ApiResponse<object>.Fail(code, message, requestId);
 
     await context.Response.WriteAsJsonAsync(response);
+  }
+  
+  private static async Task WriteValidationErrorAsync(
+    HttpContext context,
+    IReadOnlyDictionary<string, string[]> errors)
+  {
+    if (context.Response.HasStarted)
+    {
+      throw new InvalidOperationException("Response has already started");
+    }
+
+    context.Response.Clear();
+    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+    context.Response.ContentType = "application/json";
+
+    var requestId = RequestIdProvider.Get(context);
+    var response = ApiResponse<object>.Fail(
+      "VALIDATION_ERROR",
+      "请求参数不正确",
+      requestId);
+
+    await context.Response.WriteAsJsonAsync(new
+    {
+      response.Success,
+      response.Code,
+      response.Message,
+      Data = errors,
+      response.RequestId,
+    });
   }
 
 }

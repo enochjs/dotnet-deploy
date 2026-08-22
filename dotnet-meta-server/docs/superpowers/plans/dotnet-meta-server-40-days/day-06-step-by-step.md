@@ -1,40 +1,35 @@
 # Day 06 Step-by-Step - User 模块与 LINQ CRUD
 
-这份文档是 `day-06.md` 的跟做版。今天会把后端从“可以登录并读取当前用户”，推进到“有一个完整的业务 CRUD 模块”：用户创建、更新、详情、搜索和分页。
+这份文档是 `day-06.md` 的跟做版。今天按一个正常后端开发的顺序实现 User 模块：先确认业务规则，再定义 DTO 和验证规则，然后写 Service、Repository、DI、Controller，最后补测试。
 
-先明确今天的边界：
+今天的新版方向很明确：
 
-- Day 05 已经完成本地登录、JWT 鉴权和 `PasswordHash`，今天不重复做登录。
-- 原 NestJS 项目的用户模块是功能参考，不照搬 TypeORM 写法。
-- 新版 meta-server 使用标准本地登录，用户也由本系统自建和维护，不再调用 InnerServer 或其他第三方接口同步用户。
-- 当前 .NET 项目继续保持分层：`Api` 负责 HTTP，`Application` 负责业务编排，`Infrastructure` 负责 EF Core LINQ 和数据库访问。
-- FluentValidation 今天使用显式调用 `ValidateAsync` 的方式，不接入旧式 MVC 自动验证管线。这样规则以后可以安全扩展为异步校验。
+- 使用 Day 05 的标准本地登录和 JWT。
+- 用户由当前系统自建和维护。
+- 不再迁移 InnerServer 用户查询、第三方用户同步或权限中心 fallback。
+- 搜索只查本地 `users` 表，找不到就返回空数组。
+- 密码只保存 hash，不保存明文。
 
-原业务源码只作为功能参考；具体参考文件清单放在文档最后。
+原 NestJS 项目只作为字段和接口形态参考；具体参考文件清单放在文档最后。
 
 ## 0. 今天最终要得到什么
 
-完成后，你会在 Day 05 的项目上新增这些能力：
+完成后，你会新增这些能力：
 
-- `Application/Users` 中有用户请求 DTO、返回 DTO、验证器、业务服务和仓储接口。
-- `Infrastructure` 中有基于 `MetaServerDbContext` 的 `UserRepository`，用 EF Core LINQ 实现查询、分页、创建、更新。
-- `Api` 中有 `UserController`，对齐原接口：
-  - `POST /api/user/create`
-  - `PUT /api/user/update/{id}`
-  - `GET /api/user/detail/{id}`
-  - `GET /api/user/search?key=...`
-  - `GET /api/user/list?pageIndex=1&pageSize=10&name=...`
-- 创建用户时校验手机号唯一。
-- 更新用户时可以更新 manager 信息。
-- 搜索用户时只查本地 `users` 表，本地没有命中就返回空数组。
-- 分页返回继续使用 Day 02 建立的分页结构：`pageIndex`、`pageSize`、`totalCount`、`items`。
-- 集成测试覆盖重复手机号、用户不存在、本地搜索和分页。
+- `POST /api/user/create`：创建本地用户，手机号唯一，密码写入 hash。
+- `PUT /api/user/update/{id}`：更新用户基础信息，可选重置密码。
+- `GET /api/user/detail/{id}`：查询用户详情。
+- `GET /api/user/search?key=...`：按本地 `name`、`realName`、`userId` 搜索。
+- `GET /api/user/list?pageIndex=1&pageSize=10&name=...`：分页查询。
+- `UserService` 承担业务规则和 DTO 映射。
+- `UserRepository` 用 EF Core LINQ 操作数据库。
+- 集成测试覆盖重复手机号、用户不存在、本地搜索、分页。
 
-你最后需要确认三件事：
+最终验收：
 
 - `dotnet build` 成功。
 - `dotnet test` 成功。
-- 登录后携带 JWT 访问 `/api/user/list` 能看到统一响应结构和分页数据。
+- 新创建的用户可以用 Day 05 的 `/api/auth/login` 登录。
 
 ## 1. 回到项目根目录
 
@@ -52,7 +47,7 @@ cd /Users/fenghe/enochjs/study/dotnet-deploy/dotnet-meta-server
 pwd
 ```
 
-你应该看到：
+应该看到：
 
 ```text
 /Users/fenghe/enochjs/study/dotnet-deploy/dotnet-meta-server
@@ -67,238 +62,61 @@ dotnet build
 dotnet test
 ```
 
-验收：
+如果这里失败，先修 Day 05。今天会新增完整业务模块，如果基础不干净，后面很难判断错误来自哪里。
 
-- `dotnet build` 能看到 `Build succeeded.`
-- `dotnet test` 能看到 `Passed!`
+## 2. 先确认业务规则
 
-如果这里失败，先修 Day 05。今天会新增 Controller、Service、Repository 和集成测试，如果基础不干净，后面很难判断错误来自哪里。
-
-## 2. 先理解今天的用户模块流程
-
-### Step 2.1 对比原 NestJS 用户模块
-
-原项目里用户模块的主要职责是：
+正常后端开发不会一上来写 Controller。先把业务边界写清楚：
 
 ```text
-UserController
-        |
-UserService
-        |
-TypeORM Repository<User>
-        |
-users 表
+创建用户：
+- name、mobile、password 必填
+- mobile 必须是手机号格式
+- mobile 唯一
+- userId 默认等于 mobile
+- password 保存为 PasswordHash
+- role 默认 Other
+- status 默认 Enabled
+
+更新用户：
+- id 从路由读取
+- 用户不存在时报 USER_NOT_FOUND
+- mobile 修改时仍然要校验唯一
+- password 有值时重置密码 hash
+- managerUserId 有值时只关联本地已有用户
+
+详情：
+- 按 id 查本地 users 表
+- 找不到时报 USER_NOT_FOUND
+
+搜索：
+- 只查本地 users 表
+- name / realName 使用模糊匹配
+- userId 使用精确匹配
+- 找不到返回空数组
+- 不调用 InnerServer
+
+分页：
+- pageIndex 默认 1
+- pageSize 默认 10
+- pageSize 限制在 1 到 100
+- 按 id 倒序
 ```
 
-搜索用户只走本地路径：
-
-```text
-GET /api/user/search?key=...
-        |
-先查本地 users 表：name like、realName like、userId exact
-        |
-返回本地命中的用户；没有命中就返回空数组
-```
-
-今天在 .NET 中保持同样的业务意图，但拆分方式会更清楚：
-
-```text
-UserController
-        |
-UserService
-        |
-IUserRepository
-        |
-EF Core LINQ
-        |
-PostgreSQL users 表
-```
-
-### Step 2.2 记住今天要练的 LINQ
-
-今天会反复看到这些查询：
+今天要练的 LINQ：
 
 ```csharp
-await query.AnyAsync(cancellationToken);
-await query.FirstOrDefaultAsync(cancellationToken);
-await query.CountAsync(cancellationToken);
-await query.Skip(skip).Take(pageSize).ToListAsync(cancellationToken);
+AnyAsync
+FirstOrDefaultAsync
+CountAsync
+Skip
+Take
+ToListAsync
 ```
 
-你可以先这样理解：
+## 3. 创建 DTO
 
-- `AnyAsync`：判断是否存在，适合做唯一性校验。
-- `FirstOrDefaultAsync`：查询一个对象，找不到返回 `null`。
-- `CountAsync`：分页前算总数。
-- `Skip` + `Take`：跳过前面几页，再取当前页。
-
-## 3. 安装 FluentValidation
-
-### Step 3.1 给 Application 添加 FluentValidation
-
-执行：
-
-```bash
-dotnet add src/Application/Application.csproj package FluentValidation.DependencyInjectionExtensions --version '12.*'
-dotnet restore
-```
-
-为什么装在 `Application`：
-
-- 请求 DTO 和验证规则属于应用业务入口。
-- `Application` 不依赖 ASP.NET Core，也不依赖 EF Core。
-- Controller 和测试都可以复用同一套验证规则。
-
-今天不安装 `FluentValidation.AspNetCore`，也不启用旧式自动验证。我们会在 `UserService` 中显式调用 `ValidateAsync`，这样规则里未来出现数据库唯一性等异步逻辑时，不会被 MVC 同步验证管线卡住。
-
-## 4. 创建应用层通用异常
-
-Day 02 的 `Api.Exceptions.BusinessException` 放在 `Api` 层。今天的用户业务服务在 `Application` 层，不能反过来引用 `Api`。所以先在 `Application` 层创建自己的业务异常，再让 `Api` 中间件识别它。
-
-### Step 4.1 创建目录
-
-执行：
-
-```bash
-mkdir -p src/Application/Common
-```
-
-### Step 4.2 创建 `BusinessRuleException.cs`
-
-创建文件：
-
-```text
-src/Application/Common/BusinessRuleException.cs
-```
-
-填入：
-
-```csharp
-namespace Application.Common;
-
-public sealed class BusinessRuleException(string code, string message) : Exception(message)
-{
-    public string Code { get; } = code;
-}
-```
-
-### Step 4.3 创建 `RequestValidationException.cs`
-
-创建文件：
-
-```text
-src/Application/Common/RequestValidationException.cs
-```
-
-填入：
-
-```csharp
-namespace Application.Common;
-
-public sealed class RequestValidationException(
-    IReadOnlyDictionary<string, string[]> errors
-) : Exception("请求参数不正确")
-{
-    public IReadOnlyDictionary<string, string[]> Errors { get; } = errors;
-}
-```
-
-`BusinessRuleException` 表示“参数格式没错，但业务规则不允许”，例如手机号重复。`RequestValidationException` 表示“请求本身不合法”，例如手机号格式错误。
-
-### Step 4.4 修改异常中间件
-
-打开：
-
-```text
-src/Api/Middleware/ExceptionHandlingMiddleware.cs
-```
-
-增加 using：
-
-```csharp
-using Application.Common;
-```
-
-在 `catch (BusinessException exception)` 前面增加两个分支：
-
-```csharp
-catch (RequestValidationException exception)
-{
-    await WriteValidationErrorAsync(context, exception.Errors);
-}
-catch (BusinessRuleException exception)
-{
-    await WriteErrorAsync(
-        context,
-        HttpStatusCode.BadRequest,
-        exception.Code,
-        exception.Message);
-}
-```
-
-再在 `WriteErrorAsync` 下面增加：
-
-```csharp
-private static async Task WriteValidationErrorAsync(
-    HttpContext context,
-    IReadOnlyDictionary<string, string[]> errors)
-{
-    if (context.Response.HasStarted)
-    {
-        throw new InvalidOperationException("Response has already started");
-    }
-
-    context.Response.Clear();
-    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-    context.Response.ContentType = "application/json";
-
-    var requestId = RequestIdProvider.Get(context);
-    var response = ApiResponse<object>.Fail(
-        "VALIDATION_ERROR",
-        "请求参数不正确",
-        requestId);
-
-    await context.Response.WriteAsJsonAsync(new
-    {
-        response.Success,
-        response.Code,
-        response.Message,
-        Data = errors,
-        response.RequestId,
-    });
-}
-```
-
-验收：
-
-- 编译器不应该提示 `Application.Common` 找不到。
-- 中间件仍然保留 Day 02 已有的异常处理分支。
-
-### Step 4.5 创建应用层分页结果
-
-Day 02 的 `Api.Responses.PagedResponse<T>` 放在 `Api` 层。今天用户服务在 `Application` 层，不能反向引用 API 表现层类型，所以创建一个应用层分页结果：
-
-```text
-src/Application/Common/PagedResult.cs
-```
-
-填入：
-
-```csharp
-namespace Application.Common;
-
-public sealed record PagedResult<T>(
-    int PageIndex,
-    int PageSize,
-    int TotalCount,
-    IReadOnlyList<T> Items);
-```
-
-统一响应包装仍然由 Day 02 的 `ApiResponseFilter` 处理。Controller 返回 `PagedResult<T>` 后，前端看到的 `data` 结构仍然是熟悉的分页字段。
-
-## 5. 创建用户 DTO 和验证器
-
-### Step 5.1 创建目录
+### Step 3.1 创建目录
 
 执行：
 
@@ -306,7 +124,7 @@ public sealed record PagedResult<T>(
 mkdir -p src/Application/Users
 ```
 
-### Step 5.2 创建 `CreateUserRequest.cs`
+### Step 3.2 创建 `CreateUserRequest.cs`
 
 创建文件：
 
@@ -331,7 +149,7 @@ public sealed class CreateUserRequest
 }
 ```
 
-### Step 5.3 创建 `UpdateUserRequest.cs`
+### Step 3.3 创建 `UpdateUserRequest.cs`
 
 创建文件：
 
@@ -356,9 +174,9 @@ public sealed class UpdateUserRequest
 }
 ```
 
-原 NestJS 的 `UpdateUserDto` 里有 `id` 字段，但接口本身已经是 `PUT /api/user/update/:id`。在 ASP.NET Core 里今天只从路由读 `id`，请求体不再重复传 `id`。
+`id` 不放在 `UpdateUserRequest` 里，因为接口已经是 `PUT /api/user/update/{id}`。路由负责传 id，请求体只表达要更新的字段。
 
-### Step 5.4 创建 `UserQueryRequest.cs`
+### Step 3.4 创建 `UserQueryRequest.cs`
 
 创建文件：
 
@@ -379,7 +197,7 @@ public sealed class UserQueryRequest
 }
 ```
 
-### Step 5.5 创建 `UserResponse.cs`
+### Step 3.5 创建 `UserResponse.cs`
 
 创建文件：
 
@@ -409,117 +227,29 @@ public sealed record UserResponse(
     DateTimeOffset UpdatedAt);
 ```
 
-`RoleName` 对应原 NestJS 实体里的 `roleName()`。这里不把它放进领域实体，是因为角色文案更像输出格式，不是数据库核心状态。
+`RoleName` 是输出展示字段，不放进数据库实体。
 
-### Step 5.6 创建验证器
+## 4. 写验证规则
 
-创建文件：
+### Step 4.1 安装 FluentValidation
 
-```text
-src/Application/Users/CreateUserRequestValidator.cs
+执行：
+
+```bash
+dotnet add src/Application/Application.csproj package FluentValidation.DependencyInjectionExtensions --version '12.*'
+dotnet restore
 ```
 
-填入：
+这个包会提供：
 
 ```csharp
-using FluentValidation;
-
-namespace Application.Users;
-
-public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
-{
-    public CreateUserRequestValidator()
-    {
-        RuleFor(request => request.Name)
-            .NotEmpty()
-            .MaximumLength(64);
-
-        RuleFor(request => request.Mobile)
-            .NotEmpty()
-            .Matches("^1\\d{10}$")
-            .WithMessage("手机号格式不正确");
-
-        RuleFor(request => request.Password)
-            .NotEmpty()
-            .MinimumLength(6)
-            .MaximumLength(64);
-
-        RuleFor(request => request.Email)
-            .MaximumLength(128)
-            .EmailAddress()
-            .When(request => !string.IsNullOrWhiteSpace(request.Email));
-
-        RuleFor(request => request.Role)
-            .Must(UserRoles.IsValid)
-            .When(request => request.Role.HasValue)
-            .WithMessage("角色不正确");
-
-        RuleFor(request => request.Status)
-            .Must(UserStatuses.IsValid)
-            .When(request => request.Status.HasValue)
-            .WithMessage("状态不正确");
-
-        RuleFor(request => request.ManagerUserId)
-            .MaximumLength(64)
-            .When(request => !string.IsNullOrWhiteSpace(request.ManagerUserId));
-    }
-}
+IValidator<T>
+AddValidatorsFromAssemblyContaining<T>()
 ```
 
-创建文件：
+注意：`AddValidatorsFromAssemblyContaining<T>()` 只负责扫描并注册 validator，不会自动执行校验。真正执行校验的是后面 `UserService` 里的 `ValidateAsync`。
 
-```text
-src/Application/Users/UpdateUserRequestValidator.cs
-```
-
-填入：
-
-```csharp
-using FluentValidation;
-
-namespace Application.Users;
-
-public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
-{
-    public UpdateUserRequestValidator()
-    {
-        RuleFor(request => request.Name)
-            .MaximumLength(64)
-            .When(request => request.Name is not null);
-
-        RuleFor(request => request.Mobile)
-            .Matches("^1\\d{10}$")
-            .When(request => !string.IsNullOrWhiteSpace(request.Mobile))
-            .WithMessage("手机号格式不正确");
-
-        RuleFor(request => request.Password)
-            .MinimumLength(6)
-            .MaximumLength(64)
-            .When(request => !string.IsNullOrWhiteSpace(request.Password));
-
-        RuleFor(request => request.Email)
-            .MaximumLength(128)
-            .EmailAddress()
-            .When(request => !string.IsNullOrWhiteSpace(request.Email));
-
-        RuleFor(request => request.Role)
-            .Must(UserRoles.IsValid)
-            .When(request => request.Role.HasValue)
-            .WithMessage("角色不正确");
-
-        RuleFor(request => request.Status)
-            .Must(UserStatuses.IsValid)
-            .When(request => request.Status.HasValue)
-            .WithMessage("状态不正确");
-
-        RuleFor(request => request.ManagerUserId)
-            .MaximumLength(64)
-            .When(request => request.ManagerUserId is not null);
-    }
-}
-```
-
-### Step 5.7 创建角色和状态常量
+### Step 4.2 创建角色和状态常量
 
 创建文件：
 
@@ -593,9 +323,255 @@ public static class UserStatuses
 }
 ```
 
-这里先用 `int` 常量，不急着改领域实体为 enum。数据库里已经是 int，今天的核心是 CRUD 和 LINQ，不把变更扩大到全项目枚举重构。
+### Step 4.3 创建 `CreateUserRequestValidator.cs`
 
-## 6. 定义用户仓储接口
+创建文件：
+
+```text
+src/Application/Users/CreateUserRequestValidator.cs
+```
+
+填入：
+
+```csharp
+using FluentValidation;
+
+namespace Application.Users;
+
+public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
+{
+    public CreateUserRequestValidator()
+    {
+        RuleFor(request => request.Name)
+            .NotEmpty()
+            .MaximumLength(64);
+
+        RuleFor(request => request.Mobile)
+            .NotEmpty()
+            .Matches("^1\\d{10}$")
+            .WithMessage("手机号格式不正确");
+
+        RuleFor(request => request.Password)
+            .NotEmpty()
+            .MinimumLength(6)
+            .MaximumLength(64);
+
+        RuleFor(request => request.Email)
+            .MaximumLength(128)
+            .EmailAddress()
+            .When(request => !string.IsNullOrWhiteSpace(request.Email));
+
+        RuleFor(request => request.Role)
+            .Must(UserRoles.IsValid)
+            .When(request => request.Role.HasValue)
+            .WithMessage("角色不正确");
+
+        RuleFor(request => request.Status)
+            .Must(UserStatuses.IsValid)
+            .When(request => request.Status.HasValue)
+            .WithMessage("状态不正确");
+
+        RuleFor(request => request.ManagerUserId)
+            .MaximumLength(64)
+            .When(request => !string.IsNullOrWhiteSpace(request.ManagerUserId));
+    }
+}
+```
+
+### Step 4.4 创建 `UpdateUserRequestValidator.cs`
+
+创建文件：
+
+```text
+src/Application/Users/UpdateUserRequestValidator.cs
+```
+
+填入：
+
+```csharp
+using FluentValidation;
+
+namespace Application.Users;
+
+public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
+{
+    public UpdateUserRequestValidator()
+    {
+        RuleFor(request => request.Name)
+            .MaximumLength(64)
+            .When(request => request.Name is not null);
+
+        RuleFor(request => request.Mobile)
+            .Matches("^1\\d{10}$")
+            .When(request => !string.IsNullOrWhiteSpace(request.Mobile))
+            .WithMessage("手机号格式不正确");
+
+        RuleFor(request => request.Password)
+            .MinimumLength(6)
+            .MaximumLength(64)
+            .When(request => !string.IsNullOrWhiteSpace(request.Password));
+
+        RuleFor(request => request.Email)
+            .MaximumLength(128)
+            .EmailAddress()
+            .When(request => !string.IsNullOrWhiteSpace(request.Email));
+
+        RuleFor(request => request.Role)
+            .Must(UserRoles.IsValid)
+            .When(request => request.Role.HasValue)
+            .WithMessage("角色不正确");
+
+        RuleFor(request => request.Status)
+            .Must(UserStatuses.IsValid)
+            .When(request => request.Status.HasValue)
+            .WithMessage("状态不正确");
+
+        RuleFor(request => request.ManagerUserId)
+            .MaximumLength(64)
+            .When(request => request.ManagerUserId is not null);
+    }
+}
+```
+
+## 5. 准备 Service 会用到的通用类型
+
+Day 02 的 `Api.Exceptions.BusinessException` 和 `Api.Responses.PagedResponse<T>` 在 `Api` 层。`Application` 层不能反向引用 `Api`，所以这里创建应用层通用类型。
+
+### Step 5.1 创建目录
+
+执行：
+
+```bash
+mkdir -p src/Application/Common
+```
+
+### Step 5.2 创建 `BusinessRuleException.cs`
+
+创建文件：
+
+```text
+src/Application/Common/BusinessRuleException.cs
+```
+
+填入：
+
+```csharp
+namespace Application.Common;
+
+public sealed class BusinessRuleException(string code, string message) : Exception(message)
+{
+    public string Code { get; } = code;
+}
+```
+
+### Step 5.3 创建 `RequestValidationException.cs`
+
+创建文件：
+
+```text
+src/Application/Common/RequestValidationException.cs
+```
+
+填入：
+
+```csharp
+namespace Application.Common;
+
+public sealed class RequestValidationException(
+    IReadOnlyDictionary<string, string[]> errors
+) : Exception("请求参数不正确")
+{
+    public IReadOnlyDictionary<string, string[]> Errors { get; } = errors;
+}
+```
+
+### Step 5.4 创建 `PagedResult.cs`
+
+创建文件：
+
+```text
+src/Application/Common/PagedResult.cs
+```
+
+填入：
+
+```csharp
+namespace Application.Common;
+
+public sealed record PagedResult<T>(
+    int PageIndex,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyList<T> Items);
+```
+
+### Step 5.5 让异常中间件处理应用层异常
+
+打开：
+
+```text
+src/Api/Middleware/ExceptionHandlingMiddleware.cs
+```
+
+增加 using：
+
+```csharp
+using Application.Common;
+```
+
+在现有 `catch (BusinessException exception)` 前面增加：
+
+```csharp
+catch (RequestValidationException exception)
+{
+    await WriteValidationErrorAsync(context, exception.Errors);
+}
+catch (BusinessRuleException exception)
+{
+    await WriteErrorAsync(
+        context,
+        HttpStatusCode.BadRequest,
+        exception.Code,
+        exception.Message);
+}
+```
+
+再添加验证错误响应方法：
+
+```csharp
+private static async Task WriteValidationErrorAsync(
+    HttpContext context,
+    IReadOnlyDictionary<string, string[]> errors)
+{
+    if (context.Response.HasStarted)
+    {
+        throw new InvalidOperationException("Response has already started");
+    }
+
+    context.Response.Clear();
+    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+    context.Response.ContentType = "application/json";
+
+    var requestId = RequestIdProvider.Get(context);
+    var response = ApiResponse<object>.Fail(
+        "VALIDATION_ERROR",
+        "请求参数不正确",
+        requestId);
+
+    await context.Response.WriteAsJsonAsync(new
+    {
+        response.Success,
+        response.Code,
+        response.Message,
+        Data = errors,
+        response.RequestId,
+    });
+}
+```
+
+到这里，中间件只负责“异常怎么变成统一响应”；它不会自动执行 FluentValidation。真正的校验调用会放在 `UserService`。
+
+## 6. 定义 Service 依赖接口
 
 ### Step 6.1 创建 `IUserRepository.cs`
 
@@ -633,11 +609,9 @@ public interface IUserRepository
 }
 ```
 
-`excludingId` 用在更新场景：用户改手机号时，要排除自己这条记录，否则会误判“自己的手机号已存在”。
+这里先定义接口，是因为 `UserService` 只关心业务需要什么能力，不关心 EF Core 怎么写 SQL。
 
-今天不再定义 InnerServer 接口。用户来源只有本系统的 `users` 表，搜索找不到时返回空数组，不向外部系统补查。
-
-## 7. 实现用户业务服务
+## 7. 实现 UserService
 
 ### Step 7.1 创建 `UserService.cs`
 
@@ -652,6 +626,7 @@ src/Application/Users/UserService.cs
 ```csharp
 using Application.Auth;
 using Application.Common;
+using Domain.Entities;
 using FluentValidation;
 
 namespace Application.Users;
@@ -865,45 +840,38 @@ public sealed class UserService(
 }
 ```
 
-创建用户时必须通过 `IPasswordHashService` 写入 `PasswordHash`，不要保存明文密码，也不要给新用户写固定默认密码。后续如果要做“管理员重置密码”，可以复用 `UpdateAsync` 里的可选 `Password` 更新逻辑。
+这里的开发重点是：业务规则在 Service 里，Controller 不做业务判断，Repository 不做业务判断。
 
-## 8. 注册应用层服务和验证器
+## 8. 实现 EF Core Repository
 
-### Step 8.1 修改 `ApplicationRegistration.cs`
+### Step 8.1 检查 User 实体和配置
 
-打开：
-
-```text
-src/Application/ApplicationRegistration.cs
-```
-
-改成：
+确认 `src/Domain/Entities/User.cs` 有：
 
 ```csharp
-using Application.Auth;
-using Application.Users;
-using FluentValidation;
-using Microsoft.Extensions.DependencyInjection;
-
-namespace Application;
-
-public static class ApplicationRegistration
-{
-    public static IServiceCollection AddMetaServerApplication(this IServiceCollection services)
-    {
-        services.AddScoped<AuthService>();
-        services.AddScoped<UserService>();
-        services.AddValidatorsFromAssemblyContaining<CreateUserRequestValidator>();
-        return services;
-    }
-}
+public string PasswordHash { get; set; } = string.Empty;
 ```
 
-`AddValidatorsFromAssemblyContaining<CreateUserRequestValidator>()` 会扫描 `Application` 程序集里的所有 FluentValidation 验证器，并注册为 `IValidator<T>`。
+确认 `src/Infrastructure/Persistence/Configurations/UserConfiguration.cs` 有：
 
-## 9. 用 EF Core LINQ 实现 UserRepository
+```csharp
+builder.Property(entity => entity.PasswordHash)
+    .HasColumnName("password_hash")
+    .HasMaxLength(512)
+    .IsRequired();
 
-### Step 9.1 创建目录
+builder.HasIndex(entity => entity.Mobile)
+    .HasDatabaseName("ix_users_mobile")
+    .IsUnique();
+
+builder.HasIndex(entity => entity.UserId)
+    .HasDatabaseName("ix_users_user_id")
+    .IsUnique();
+```
+
+如果字段或索引不存在，先补齐。Day 05 已经处理过 `PasswordHash`，这里通常只是确认。
+
+### Step 8.2 创建目录
 
 执行：
 
@@ -911,7 +879,7 @@ public static class ApplicationRegistration
 mkdir -p src/Infrastructure/Users
 ```
 
-### Step 9.2 创建 `UserRepository.cs`
+### Step 8.3 创建 `UserRepository.cs`
 
 创建文件：
 
@@ -1007,9 +975,49 @@ public sealed class UserRepository(MetaServerDbContext dbContext) : IUserReposit
 }
 ```
 
-这里用 `EF.Functions.ILike` 而不是 `string.Contains`，是因为 PostgreSQL 的 `ILIKE` 可以做大小写不敏感匹配，生成的 SQL 更接近我们真正想表达的查询。今天项目使用 Npgsql，所以可以使用这个 PostgreSQL 扩展。
+这里用 `EF.Functions.ILike`，因为当前项目使用 PostgreSQL，它能生成大小写不敏感的模糊查询。
 
-### Step 9.3 注册仓储
+## 9. 注册 DI
+
+### Step 9.1 注册 Application 服务和 validators
+
+打开：
+
+```text
+src/Application/ApplicationRegistration.cs
+```
+
+改成：
+
+```csharp
+using Application.Auth;
+using Application.Users;
+using FluentValidation;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Application;
+
+public static class ApplicationRegistration
+{
+    public static IServiceCollection AddMetaServerApplication(this IServiceCollection services)
+    {
+        services.AddScoped<AuthService>();
+        services.AddScoped<UserService>();
+        services.AddValidatorsFromAssemblyContaining<CreateUserRequestValidator>();
+        return services;
+    }
+}
+```
+
+这行：
+
+```csharp
+services.AddValidatorsFromAssemblyContaining<CreateUserRequestValidator>();
+```
+
+只是把 validators 注册进 DI。它不会自动校验请求；校验发生在 `UserService` 的 `ValidateAsync`。
+
+### Step 9.2 注册 Infrastructure 仓储
 
 打开：
 
@@ -1024,13 +1032,13 @@ using Application.Users;
 using Infrastructure.Users;
 ```
 
-在已有用户认证仓储注册下面增加：
+在已有认证相关注册旁边增加：
 
 ```csharp
 services.AddScoped<IUserRepository, UserRepository>();
 ```
 
-最终关键片段类似：
+关键片段类似：
 
 ```csharp
 services.AddScoped<IUserCredentialRepository, UserCredentialRepository>();
@@ -1038,22 +1046,9 @@ services.AddScoped<IUserRepository, UserRepository>();
 services.AddSingleton<IPasswordHashService, PasswordHashService>();
 ```
 
-## 10. 确认不引入旧 InnerServer 逻辑
+## 10. 写 Controller
 
-新版 meta-server 的用户体系只依赖本系统：
-
-- 登录使用 Day 05 的本地 JWT。
-- 用户通过 `/api/user/create` 自建。
-- 搜索只查本地 `users` 表。
-- 不创建 `IInnerServerUserClient`。
-- 不创建 `Api/Integrations/InnerServer`。
-- 不在 `Program.cs` 中注册 InnerServer `HttpClient`。
-
-原 NestJS 的 `InnerServerService` 可以帮助你理解旧系统为什么要查权限中心，但今天不要迁移它。这样后续需求会更清楚：用户、密码、状态、角色都由当前 .NET 服务维护。
-
-## 11. 创建 UserController
-
-### Step 11.1 创建 `UserController.cs`
+### Step 10.1 创建 `UserController.cs`
 
 创建文件：
 
@@ -1117,87 +1112,24 @@ public sealed class UserController(UserService userService) : ControllerBase
 }
 ```
 
-原 NestJS 里 `detail/:id` 方法声明了路由参数，但代码里读的是 query。今天直接使用 ASP.NET Core 的 route binding：`GET /api/user/detail/1` 会绑定到 `int id`。
+Controller 只负责 HTTP 路由和参数绑定。业务规则不要写在 Controller 里。
 
-## 12. 检查用户实体配置
+## 11. 明确不迁移 InnerServer
 
-### Step 12.1 打开 `User.cs`
-
-确认：
+今天不要创建这些东西：
 
 ```text
-src/Domain/Entities/User.cs
+IInnerServerUserClient
+InnerServerUserInfo
+Api/Integrations/InnerServer
+FakeInnerServerUserClient
 ```
 
-至少有这些字段：
+也不要在 `Program.cs` 里注册 InnerServer `HttpClient`。
 
-```csharp
-public int Id { get; set; }
-public string UserId { get; set; } = string.Empty;
-public string? DingTalkUserId { get; set; }
-public string? ManagerUserId { get; set; }
-public string? ManagerDingTalkUserId { get; set; }
-public string? Email { get; set; }
-public string Name { get; set; } = string.Empty;
-public string? RealName { get; set; }
-public string Mobile { get; set; } = string.Empty;
-public string PasswordHash { get; set; } = string.Empty;
-public int Role { get; set; }
-public int Status { get; set; }
-public DateTimeOffset CreatedAt { get; set; }
-public DateTimeOffset UpdatedAt { get; set; }
-```
+新版用户来源只有本地 `users` 表。原 NestJS 的 `InnerServerService` 只是旧系统背景，不是今天要迁移的目标。
 
-### Step 12.2 打开 `UserConfiguration.cs`
-
-确认：
-
-```text
-src/Infrastructure/Persistence/Configurations/UserConfiguration.cs
-```
-
-有这些关键映射：
-
-```csharp
-builder.Property(entity => entity.DingTalkUserId)
-    .HasColumnName("ding_talk_user_id")
-    .HasMaxLength(64);
-
-builder.Property(entity => entity.ManagerDingTalkUserId)
-    .HasColumnName("manager_ding_talk_user_id")
-    .HasMaxLength(64);
-
-builder.Property(entity => entity.PasswordHash)
-    .HasColumnName("password_hash")
-    .HasMaxLength(512)
-    .IsRequired();
-
-builder.HasIndex(entity => entity.Mobile)
-    .HasDatabaseName("ix_users_mobile")
-    .IsUnique();
-
-builder.HasIndex(entity => entity.UserId)
-    .HasDatabaseName("ix_users_user_id")
-    .IsUnique();
-```
-
-如果你看到类似：
-
-```csharp
-.HasColumnName(("password_hash"))
-```
-
-可以顺手改成：
-
-```csharp
-.HasColumnName("password_hash")
-```
-
-双括号能编译，但不必保留。
-
-## 13. 编译并处理第一轮错误
-
-### Step 13.1 执行 build
+## 12. 先编译
 
 执行：
 
@@ -1205,23 +1137,16 @@ builder.HasIndex(entity => entity.UserId)
 dotnet build
 ```
 
-如果看到 `PagedResult<>` 找不到，检查：
+常见问题：
 
-- `src/Application/Common/PagedResult.cs` 是否存在。
-- `UserController.cs` 是否有 `using Application.Common;`。
-- `UserService.cs` 是否没有再引用 `Api.Responses`。
+- `IValidator<>` 找不到：检查 FluentValidation 包是否装在 `Application.csproj`。
+- `PagedResult<>` 找不到：检查 `using Application.Common;`。
+- `BusinessRuleException` 找不到：检查 `src/Application/Common` 文件和 using。
+- `UserRepository` 找不到：检查 namespace 是否是 `Infrastructure.Users`。
 
-如果看到 FluentValidation 相关类型找不到，执行：
+## 13. 手动调用接口
 
-```bash
-dotnet restore
-```
-
-再重新 build。
-
-## 14. 手动调用接口
-
-### Step 14.1 启动 API
+### Step 13.1 启动 API
 
 执行：
 
@@ -1229,17 +1154,15 @@ dotnet restore
 dotnet run --project src/Api/Api.csproj
 ```
 
-记下终端输出里的本地地址，例如：
+记下本地地址，例如：
 
 ```text
 http://localhost:5063
 ```
 
-如果端口不同，下面命令里的地址也一起替换。
+### Step 13.2 登录拿 token
 
-### Step 14.2 登录拿 token
-
-新开一个终端，执行：
+执行：
 
 ```bash
 curl -s -X POST http://localhost:5063/api/auth/login \
@@ -1247,24 +1170,9 @@ curl -s -X POST http://localhost:5063/api/auth/login \
   -d '{"account":"13800000001","password":"123456"}'
 ```
 
-从响应的 `data.accessToken` 复制 token。
+从 `data.accessToken` 复制 token。
 
-### Step 14.3 查看用户分页
-
-执行：
-
-```bash
-curl -s 'http://localhost:5063/api/user/list?pageIndex=1&pageSize=10' \
-  -H 'Authorization: Bearer <accessToken>'
-```
-
-验收：
-
-- HTTP 状态是 200。
-- 响应外层仍然有 `success`、`code`、`message`、`data`、`requestId`。
-- `data.items` 里能看到 Day 04 种子用户。
-
-### Step 14.4 创建用户
+### Step 13.3 创建用户
 
 执行：
 
@@ -1280,9 +1188,9 @@ curl -s -X POST http://localhost:5063/api/user/create \
 - 返回新用户。
 - `userId` 默认等于手机号。
 - `roleName` 是 `后端`。
-- 数据库里保存的是 `PasswordHash`，不是明文 `password`。
+- 响应里不会返回 `password` 或 `passwordHash`。
 
-再用新用户登录一次：
+再用新用户登录：
 
 ```bash
 curl -s -X POST http://localhost:5063/api/auth/login \
@@ -1290,14 +1198,11 @@ curl -s -X POST http://localhost:5063/api/auth/login \
   -d '{"account":"13900000001","password":"123456"}'
 ```
 
-验收：
+能拿到 token，说明自建用户已经接入标准登录。
 
-- 能拿到新的 `data.accessToken`。
-- 说明自建用户已经接入 Day 05 的标准登录流程。
+### Step 13.4 测重复手机号
 
-### Step 14.5 重复手机号
-
-再次执行同一个创建命令。
+再次执行创建用户命令。
 
 验收：
 
@@ -1305,23 +1210,22 @@ curl -s -X POST http://localhost:5063/api/auth/login \
 - `code` 是 `USER_MOBILE_EXISTS`。
 - `message` 是 `手机号已存在`。
 
-### Step 14.6 更新 manager
+### Step 13.5 查分页
 
-先确认已有种子用户 `u001`，然后执行：
+执行：
 
 ```bash
-curl -s -X PUT http://localhost:5063/api/user/update/2 \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer <accessToken>' \
-  -d '{"managerUserId":"u001"}'
+curl -s 'http://localhost:5063/api/user/list?pageIndex=1&pageSize=10' \
+  -H 'Authorization: Bearer <accessToken>'
 ```
 
 验收：
 
-- 返回用户的 `managerUserId` 是 `u001`。
-- 如果本地能找到 `u001`，可以确认 manager 关系已经建立。
+- `data.pageIndex` 是 1。
+- `data.pageSize` 是 10。
+- `data.items` 有用户数据。
 
-### Step 14.7 搜索本地用户
+### Step 13.6 搜索本地用户
 
 执行：
 
@@ -1332,14 +1236,13 @@ curl -s 'http://localhost:5063/api/user/search?key=dev' \
 
 验收：
 
-- 如果本地 `name`、`realName` 或 `userId` 命中，返回本地用户。
-- 如果本地没有命中，返回空数组，不调用外部系统。
+- 本地命中时返回用户数组。
+- 本地不命中时返回空数组。
+- 不调用外部系统。
 
-## 15. 编写集成测试
+## 14. 写集成测试
 
-测试放在最后，是因为今天先要把概念和功能跑通，再用测试固化行为。
-
-### Step 15.1 创建 `UserApiTests.cs`
+### Step 14.1 创建 `UserApiTests.cs`
 
 创建文件：
 
@@ -1475,32 +1378,9 @@ public sealed class UserApiTests : IClassFixture<TestEnvironmentFixture>
 }
 ```
 
-### Step 15.2 注意测试共享数据库状态
+测试放在最后，是为了先把业务实现跑通，再用测试固化行为。真实项目里也可以先写测试再实现；但学习文档里先讲清概念和业务层次更重要。
 
-`TestEnvironmentFixture` 是 class fixture，同一个测试类里的测试共享一套临时数据库。上面的测试只依赖 Day 04 种子用户，所以分页数量可以断言为“至少有种子数据”，不要写得过度脆弱：
-
-```csharp
-Assert.True(data.GetProperty("totalCount").GetInt32() >= 2);
-```
-
-等你后面想练更严格的测试隔离时，可以升级为每个测试重建数据库，或每个测试用事务回滚。今天先不扩展。
-
-## 16. 运行测试
-
-### Step 16.1 执行 build
-
-执行：
-
-```bash
-dotnet build
-```
-
-验收：
-
-- 没有编译错误。
-- 如果有 nullable warning，优先修掉，不要靠忽略通过。
-
-### Step 16.2 执行全部测试
+## 15. 运行测试
 
 执行：
 
@@ -1513,49 +1393,46 @@ dotnet test
 - Auth、Diagnostics、Database、Redis、User 相关测试全部通过。
 - 测试输出中能看到 Testcontainers 启动 PostgreSQL 和 Redis。
 
-### Step 16.3 如果搜索测试失败
+如果搜索测试失败，优先检查：
 
-优先检查三件事：
+- `UserRepository.SearchLocalAsync` 是否查询了 `Name`、`RealName` 和 `UserId`。
+- 本地无命中时是否返回空数组。
+- 是否误加了 InnerServer 或外部同步逻辑。
 
-- `UserRepository.SearchLocalAsync` 是否同时查询了 `Name`、`RealName` 和 `UserId`。
-- `SearchAsync` 是否对空关键词返回空数组。
-- 本地无命中时是否直接返回空数组，没有额外创建用户。
+如果重复手机号测试失败，优先检查：
 
-### Step 16.4 如果重复手机号测试失败
-
-检查：
-
-- `CreateAsync` 里是否先 `Trim()` 了手机号。
+- `CreateAsync` 是否先 `Trim()` 手机号。
 - `ExistsByMobileOrUserIdAsync` 是否同时检查 `Mobile` 和 `UserId`。
 - 种子数据里是否已经有 `13800000001`。
 
-## 17. 今天的学习检查
+## 16. 今天的学习检查
 
-完成后，回头确认你能解释这些问题：
+完成后，确认你能解释：
 
+- 为什么先写 DTO，再写 Controller？
+- `AddValidatorsFromAssemblyContaining` 为什么只是注册，不是执行？
+- 为什么真正的 `ValidateAsync` 放在 `UserService`？
+- 为什么 `Application` 层不引用 `Api` 层类型？
 - 为什么 Controller 不直接注入 `MetaServerDbContext`？
-- 为什么 `Application` 层不能引用 `Api.Exceptions.BusinessException`？
-- `AnyAsync` 和 `FirstOrDefaultAsync` 分别适合什么场景？
-- 分页为什么要先 `CountAsync`，再 `Skip` / `Take`？
-- 更新手机号时为什么要传 `excludingId`？
-- 为什么新版用户搜索不再调用 InnerServer？
-- FluentValidation 为什么今天用显式 `ValidateAsync`？
+- `AnyAsync`、`FirstOrDefaultAsync`、`CountAsync` 分别适合什么场景？
+- 为什么新版用户搜索不调用 InnerServer？
 
-## 18. 今日验收清单
+## 17. 今日验收清单
 
-- [ ] `FluentValidation.DependencyInjectionExtensions` 已添加到 `Application`。
+- [ ] 业务规则已经明确：本地用户、本地登录、本地搜索。
+- [ ] `Application/Users` 中有 request DTO、response DTO、validator、常量、仓储接口和 `UserService`。
 - [ ] `Application/Common` 中有业务异常、验证异常和分页结果。
-- [ ] `Application/Users` 中有 DTO、验证器、常量、接口和 `UserService`。
-- [ ] `Infrastructure/Users/UserRepository.cs` 用 EF Core LINQ 实现用户查询。
-- [ ] `PersistenceRegistration` 注册了 `IUserRepository`。
-- [ ] `Api/Controllers/UserController.cs` 提供了 Day 06 要求的 5 个接口。
-- [ ] 全文没有要求创建 InnerServer、第三方用户查询或外部用户同步。
+- [ ] `ExceptionHandlingMiddleware` 能处理应用层异常。
+- [ ] `Infrastructure/Users/UserRepository.cs` 用 EF Core LINQ 实现查询。
+- [ ] DI 注册了 `UserService`、validators、`IUserRepository`。
+- [ ] `Api/Controllers/UserController.cs` 提供 5 个接口。
+- [ ] 没有创建 InnerServer、第三方用户查询或外部用户同步逻辑。
 - [ ] `dotnet build` 通过。
 - [ ] `dotnet test` 通过。
 
-## 19. 晚上复盘
+## 18. 晚上复盘
 
-可以按这个格式记录到你的学习笔记：
+可以按这个格式记录：
 
 ```text
 今天学会的 C#/.NET 概念：

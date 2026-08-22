@@ -3,6 +3,8 @@ using Infrastructure.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Application.Users;
+using Infrastructure.Users;
 
 namespace Infrastructure.Persistence;
 
@@ -20,6 +22,7 @@ public static class PersistenceRegistration
         });
 
         services.AddScoped<IUserCredentialRepository, UserCredentialRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
         services.AddSingleton<IPasswordHashService, PasswordHashService>();
 
         return services;
