@@ -1232,7 +1232,7 @@ dotnet run --project src/Api/Api.csproj
 记下终端输出里的本地地址，例如：
 
 ```text
-http://localhost:5000
+http://localhost:5063
 ```
 
 如果端口不同，下面命令里的地址也一起替换。
@@ -1242,7 +1242,7 @@ http://localhost:5000
 新开一个终端，执行：
 
 ```bash
-curl -s -X POST http://localhost:5000/api/auth/login \
+curl -s -X POST http://localhost:5063/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"account":"13800000001","password":"123456"}'
 ```
@@ -1254,7 +1254,7 @@ curl -s -X POST http://localhost:5000/api/auth/login \
 执行：
 
 ```bash
-curl -s 'http://localhost:5000/api/user/list?pageIndex=1&pageSize=10' \
+curl -s 'http://localhost:5063/api/user/list?pageIndex=1&pageSize=10' \
   -H 'Authorization: Bearer <accessToken>'
 ```
 
@@ -1269,7 +1269,7 @@ curl -s 'http://localhost:5000/api/user/list?pageIndex=1&pageSize=10' \
 执行：
 
 ```bash
-curl -s -X POST http://localhost:5000/api/user/create \
+curl -s -X POST http://localhost:5063/api/user/create \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer <accessToken>' \
   -d '{"name":"new-dev","mobile":"13900000001","password":"123456","email":"new-dev@example.com","role":2,"status":1}'
@@ -1285,7 +1285,7 @@ curl -s -X POST http://localhost:5000/api/user/create \
 再用新用户登录一次：
 
 ```bash
-curl -s -X POST http://localhost:5000/api/auth/login \
+curl -s -X POST http://localhost:5063/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"account":"13900000001","password":"123456"}'
 ```
@@ -1310,7 +1310,7 @@ curl -s -X POST http://localhost:5000/api/auth/login \
 先确认已有种子用户 `u001`，然后执行：
 
 ```bash
-curl -s -X PUT http://localhost:5000/api/user/update/2 \
+curl -s -X PUT http://localhost:5063/api/user/update/2 \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer <accessToken>' \
   -d '{"managerUserId":"u001"}'
@@ -1326,7 +1326,7 @@ curl -s -X PUT http://localhost:5000/api/user/update/2 \
 执行：
 
 ```bash
-curl -s 'http://localhost:5000/api/user/search?key=dev' \
+curl -s 'http://localhost:5063/api/user/search?key=dev' \
   -H 'Authorization: Bearer <accessToken>'
 ```
 
